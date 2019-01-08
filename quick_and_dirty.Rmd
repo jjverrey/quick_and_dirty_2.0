@@ -1,0 +1,540 @@
+---
+title: "Quick and Dirty"
+author: "Jacob Verrey"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+#Part I: Maze Performance Analysis
+```{r}
+masterData <- read.csv("v2_mover_date_master.csv")
+
+#**********************************
+#Create Derived Metrics
+#**********************************
+
+#Improvement Index
+masterData$first_half_sec_half_improvement <- 
+  masterData$second_halv_avg_speed - masterData$first_half_avg_speed
+
+
+#**********************************
+#Initialize Z Score Values
+#**********************************
+
+#Completion Time Z scores
+masterData$completion_time_z <- 
+  (masterData$completion_time - mean(masterData$completion_time)) / sd(masterData$completion_time)
+
+#Total Avg Speed Z scores
+masterData$total_avg_speed_z <- 
+  (masterData$total_avg_speed - mean(masterData$total_avg_speed)) /sd(masterData$total_avg_speed)
+
+#Improvement Z scores
+masterData$first_half_sec_half_improvement_z <-
+(masterData$first_half_sec_half_improvement -
+mean(masterData$first_half_sec_half_improvement))/sd(masterData$first_half_sec_half_improvement)
+
+```
+
+## 1) How did people perform on the maze? Are there any glitches?
+
+```{r}
+#Let's see if completoin time predicts bonus..
+plot(x=masterData$completion_time, y = masterData$cash_bonus, ylab = "Cash Bonus ($)",
+     main = "Completion Time vs. Cash Bonus", xlab = "Completion Time (s)")
+```
+```{r}
+cor(masterData$completion_time, masterData$cash_bonus)
+```
+
+Very good! The longer you take, the worse your cash bonus is, which is what my formula predicts (bonus = 2 - elapsed_time_in_seconds * .01). This suggests that there was no major glitches when I launched this task on mTurk.
+
+## 2) How did people perform on this maze?
+
+```{r}
+par(mfrow = c(1,2))
+boxplot(masterData$completion_time, main = "Distribution of Completion Time",
+        ylab = "Completion Time (s)")
+hist(masterData$completion_time, main = "Frequency vs. Completion Time Bins",
+     xlim=c(0,200), xlab = "Completion Time (s)")
+abline(v=mean(masterData$completion_time))
+par(mfrow = c(1,1))
+```
+```{r}
+summary(masterData$completion_time)
+```
+
+Ok - people took a little longer than a minute and a half, on average, to complete the maze, with a pretty good distribution of scores.
+
+## 3) Was maze performance affected by where the participant started? (center vs. edge)
+
+```{r}
+#Graph it
+boxplot(masterData$completion_time ~ masterData$start_from_center, xlab = "Starting pos",
+        main = "Distribution of Completion Time by starting pos",
+        names = c("edge", "center"), ylab = "Completion Time (s)")
+```
+```{r}
+#Take difference of means
+mean(subset(masterData, start_from_center)$completion_time) - mean(subset(masterData, !start_from_center)$completion_time)
+```
+
+Ok - so it looks like starting from the edge makes you perform ~16 seconds better than starting from the center. Let's see if it's signifcant...
+
+```{r}
+#Take the difference of means via a ttest
+
+t.test(masterData$completion_time ~ masterData$start_from_center)$p.value
+```
+
+Not significant, but I'll be curious to see what happens to it when I get more data.
+
+## 4) Is speed (a metric I made up) & speed-improvement a good proxy for performance?
+
+Speed is in a metric called 'checkpoints/second', which is not very intuitive. Because of this, I will use z-scores instead, as everyone knows how to interpret a z-score.
+
+```{r}
+#Plot out completoin time vs. speed (z)
+plot(completion_time ~ total_avg_speed_z, data = masterData,
+main = "Completion Time vs. Avg Speed Zs", ylab = "Completoin Time (S)",
+xlab = "Avg Speed Zs")
+regression <- lm(completion_time ~ total_avg_speed_z, data = masterData)
+abline(regression)
+abline(h = mean(masterData$completion_time), col = "grey")
+```
+
+```{r}
+coef(regression)
+```
+
+```{r}
+summary(regression)$r.squared
+```
+
+Wow! So a one standard deviation increase in overall average speed will make you perform 30 seconds better on the maze! Additionally, my speed metric predicts a ton of the variance (~65%)! Speed seems to be an excellent predicter for performance!
+
+Now how does learning (i.e. speed improvement) affect performance?
+
+```{r}
+#Learning vs. completion time
+plot(completion_time ~ first_half_sec_half_improvement_z, data = masterData,
+main = "Completion Time vs. Learning Zs", ylab = "Completoin Time (S)",
+xlab = "Speed improvement from first half to second half Zs")
+regression <- lm(completion_time ~ first_half_sec_half_improvement_z,
+data = masterData)
+abline(h = mean(masterData$completion_time), col = "gray")
+abline(regression)
+```
+```{r}
+coef(regression)
+```
+
+```{r}
+summary(regression)$r.squared
+```
+
+Hmm - so this relationship isn't exactly linear: there's a group of people near 1 sd below the mean who did outrageously bad. Excludign them thoguh, the relationship seems linear: the more one improves, the better they'll do on the maze by roughly 17 seconds. This isn't as pwoerful as a predicto rof overall speed, but it's nice to see that improvement explains some of the data.
+
+## 5) How do other metrics affect maze performance? Like pixel movement & practice.
+
+```{r}
+#Does total pixel movement (i.e. efficiency) predict maze performance?
+plot(completion_time ~ maze_total_pixel_movement, data = masterData,
+main = "Completion Time vs. Total pixel movement", ylab = "Completoin Time (s)",
+xlab = "Maze total pixel movement")
+regression <- lm(completion_time ~ maze_total_pixel_movement, data = masterData)
+abline(regression)
+```
+
+```{r}
+coef(regression)
+```
+
+```{r}
+summary(regression)$r.squared
+```
+
+Ok, so for each pixel the user moves, it costs the user an extra .06 seconds on the maze. This makes sense, since the less pixels you use to move, the more efficent you'll complete the maze.
+
+```{r}
+#Does total practice (seconds) predict maze performance?
+plot(completion_time ~ practice_time, data = masterData,
+main = "Completion Time vs. Practice (time)", ylab = "Completoin Time (s)",
+xlab = "Amount of practice (s)")
+regression <- lm(completion_time ~ practice_time, data = masterData)
+```
+
+```{r}
+coef(regression)
+```
+
+```{r}
+summary(regression)$r.squared
+```
+
+Wow! So for every second a user practices, he's expected to take .01 seconds longer to complete the maze. This seems a bit fishy: this study was launched on mTurk, and mTurkers often pause halfway through a survey to complete other surveys. The people who spend logner on the practice maze could just be multitasking mTurkers who go to another survey before going back to our survey, and of course they would do worse on a maze: if you're doing another survey and taking a break off the maze game, then when you come back, you'll likely forget how to move, and you therefore won't do that well on the real maze.
+
+Why don't we look at osmething like total pixel movement?
+
+```{r}
+#Look at total pixel movement
+plot(completion_time ~ practice_total_pixel_movement, data = masterData,
+main = "Completion Time vs. Practice", ylab = "Completoin Time (s)",
+xlab = "Amount of practice (total pixel movement)")
+regression <- lm(completion_time ~ practice_total_pixel_movement, data = masterData)
+abline(regression)
+```
+
+```{r}
+coef(regression)
+```
+
+```{r}
+summary(regression)$r.squared
+```
+
+Ok, so for every pixel the user moves, he will perform .006 seconds better at the maze, so if he moves 500 pixels (most of the users move less than 500 pictures), you'll only get aorund 3 seconds better at the maze. This is a really small effect however, so I don't think that's strong evidence that practice, in terms of pixel movement, predicts performance. Perhaps this is jus tbecause of self selection: people who are really bad at the maze tend to practice more so they're less bad, or about as good as the average participatn who doesn't practice, so self-selection may correct for the skill-boosting effect of practice
+
+## 6) let's see how all these independent maze predicters relate....
+
+```{r}
+multi_var_regr <- lm(completion_time ~ total_avg_speed_z +
+first_half_sec_half_improvement_z +
+total_reset_count + maze_total_pixel_movement, data = masterData)
+summary(multi_var_regr)
+```
+
+Very good! Controllign forother variables, it seems that 
+
+# Part 2: Mover Psyche.
+
+## Part 0: Recode some variables
+
+```{r}
+
+# "Compared to most people, how skilled do you think you are?"
+masterData$self_skill_avg_q <- NA
+masterData$self_skill_avg_q[masterData$self_skill_avg == "I am less skilled than most people"] <- -1
+masterData$self_skill_avg_q[masterData$self_skill_avg == "I am about as skilled as most people"] <- 0
+masterData$self_skill_avg_q[masterData$self_skill_avg == "I am more skilled than most people"] <- 1
+
+# "Compared to MOST PEOPLE, how skilled do you think your partner is?"
+masterData$partner_skill_avg_q <- NA
+masterData$partner_skill_avg_q[masterData$partner_skill_avg == "They are less skilled than most people"] <- -1
+masterData$partner_skill_avg_q[masterData$partner_skill_avg == "They are about as skilled as most people"] <- 0
+masterData$partner_skill_avg_q[masterData$partner_skill_avg == "They are more skilled than most people"] <- 1
+
+# "Compared to YOU, how skilled do you think your partner is?
+masterData$partner_skill_you_q <- NA
+masterData$partner_skill_you_q[masterData$partner_skill_you == "They are less skilled than me"] <- -1
+masterData$partner_skill_you_q[masterData$partner_skill_you == "They are about as skilled as me"] <- 0
+masterData$partner_skill_you_q[masterData$partner_skill_you == "They are more skilled than me"] <- 1
+
+
+# "How often were you thinking about switching?"
+masterData$switch_thinking_q <- NA
+masterData$switch_thinking_q[masterData$switch_thinking == "Never"] <- 0
+masterData$switch_thinking_q[masterData$switch_thinking == "Some of the time"] <- 1
+masterData$switch_thinking_q[masterData$switch_thinking == "About half the time"] <- 2
+masterData$switch_thinking_q[masterData$switch_thinking == "Most of the time"] <- 3
+masterData$switch_thinking_q[masterData$switch_thinking == "The entire time"] <- 4
+
+#Assign them to a catagory based on skill
+masterData$skill_catagory <- NA
+masterData$skill_catagory[masterData$completion_time_z <= -2] <- "ERROR" #IMPOSSIBLE to get a score this good!
+masterData$skill_catagory[masterData$completion_time_z <= -1 & masterData$completion_time_z > -2] <- "-2_SD"
+masterData$skill_catagory[masterData$completion_time_z <= 0 & masterData$completion_time_z > -1] <- "-1_SD"
+masterData$skill_catagory[masterData$completion_time_z > 0 & masterData$completion_time_z < 1] <- "1_SD"
+masterData$skill_catagory[masterData$completion_time_z >= 1 & masterData$completion_time_z < 2] <- "2_SD"
+masterData$skill_catagory[masterData$completion_time_z >= 2] <- "3_SD"
+
+
+#better_on_own: How much better would you be on your own (METRIC)? Absolute vs. present
+masterData$better_on_own_seconds <- NA
+masterData$better_on_own_percent <- NA
+masterData$better_on_own_seconds <- masterData$perf_self_solo - masterData$completion_time
+masterData$better_on_own_percent <- 
+  round((1 - masterData$perf_self_solo/masterData$completion_time) * 100, 2)
+
+
+#better_on_own: How much better would you be on your own (METRIC)? Absolute vs. present
+
+masterData$myself_average_comparison_seconds <- NA
+masterData$myself_average_comparison_percent <- NA
+masterData$myself_average_comparison_seconds <- masterData$perf_avg_pair - masterData$completion_time
+masterData$myself_average_comparison_percent <- round(( masterData$perf_avg_pair/masterData$completion_time - 1) * 100, 2)
+```
+## Part 1: Do the movers think they shoud've switched roles?
+
+```{r}
+par(mfrow = c(1,2))
+
+#Should you ahve switched? Yes or no.
+barplot(prop.table(table(masterData$switch_goodbad)), ylab = "% of respondents",
+xlab = "Should you have switched?", names.arg = c("No", "Yes"),
+main = "Should you have switched?")
+
+switched_on_perf_self_report <- prop.table(table(masterData$noswitch_impact))
+#Should you have switched? Effects of switchign on performance
+barplot(switched_on_perf_self_report, ylab = "% of respondents",
+xlab = "Affect of not switching on performance", main = "How'd not switch affect performance?")
+
+# Assign them to a catagory based on their skill level
+masterData$skill_catagory <- NA
+
+par(mfrow = c(1,1))
+```
+
+Let's extract some numberas from the barchart.
+
+```{r}
+# proportion of people who claimed that not switching hurt, helped, or had no affect on performance
+ns_hurt <- sum(switched_on_perf_self_report[0:5])
+ns_zero <- switched_on_perf_self_report[6]
+ns_helped <- sum(switched_on_perf_self_report[7:11])
+
+paste(ns_hurt, ns_zero, ns_helped, sep = ", ") #Values pasted togehter so they take up one line
+```
+
+Ok - the values from the 'affect performance' histogram cnicely complement the 'should you have switched' histogram. More specifically, a little over 20% of people think that they should have switched with their partner, and in the 'affect performance' histogram, 20% of people think that not switching hurt performance. This all makes sense: if you think that not switching hurt your performance, then of c oursae you would've wanted to switch roles with your partner!
+
+Roughly 70% of participants think that the switch should NOT have happened, but only 50% of participants think that switching would've hurt performance. This is weird: one would think that people who say that switching should NOT have happened should also say that they switching would have hurt perofrmance!
+
+The missing 20% could come from people who responded '0' to the affect_peroformance question; those are the people who didn't think switching helped or hurt their performance. Most of the people who voted '0' in 'affect_performacne' histogram could've voted for 'no' in the 'should you have switched?' question. If they did, then this would explain the missing 20%, and more critically, this would mean that, if you think switching roles will have a NUETRAL affect on performance, then you won't switch.
+
+```{r}
+plot(as.factor(masterData$switch_goodbad), x= jitter(masterData$noswitch_impact), 
+     xlab = "Affect of switching in performance", ylab="Should you have switched (y/n)",
+     main = "Affect of switch performance predict binary view of switch?")
+```
+
+Yep, and it seems like one's view on ho wmuch switching helped/hurt performance very much affects whether you think you should have switched. It seems that those who think switching has no affect on performance ALSO think that you shouldn't switch... perhaps peopel only do switch if they think it'll have a positive - rather than nuetral - effect.
+
+
+#### Summary: Movers don't like being swithed on unless they think it'll help performance. Even if switching doesn't affect performance, they usually do NOT want to be switched on 
+
+## 2) How do people judge their performance & their partner's performance?
+```{r}
+# How good are you at judging your own performance?
+par(mfrow = c(1,2))
+plot(y = masterData$completion_time, x = masterData$self_skill_avg, 
+     main = "Skill level self vs. Avg",
+     names = c("same", "less", "more"),
+     ylab = "Completion time (s)", xlab = "Your skill lvl vs. Avg Joe's")
+barplot(table(masterData$self_skill_avg), names = c("same", "less", "more"),
+        main = "Skill level self vs. Avg Hist", ylab = "# of responses",
+        xlab = "Your skill lvl vs. Avg Joe's")
+par(mfrow = c(1,1))
+```
+
+Huh! It seems that people are pretty bad at predicting their own performance... people who rate themselves as 'as skilled as most people' and 'more skilled than most people' tend to complete the maze with similar times. Furthermore, very few people admit they're more skilled than most people, so people tend to be pretty bad estimaters at their own performance.
+
+Most people think they're average, which is not suprrising, since that's something that's been replciated in psychology a lot.
+
+Very very very few people think they're less skilled than average, and the completoin times of those who think they're less ksilled than average varies. Perhaps this is due to the better-than-average effect, where despite being incompetent, you think you're good at the task. 
+
+
+```{r}
+# How do you judge partner's performance RELATIVE TO YOURSELF?
+par(mfrow = c(1,2))
+plot(y = masterData$completion_time, x = masterData$partner_skill_you, 
+     main = "Partner Skill Lvl You vs. CTs", xlab = "Partner Skill Lvl vs. You",
+     names = c("equal", "less", "more"), ylab = "Completion time (s)")
+barplot(table(masterData$partner_skill_you), names = c("equal", "less", "more"),
+        main = "Partner Skill Lvl Hist", ylab = "# of responses",
+        xlab = "Partner Skill Lvl vs. You")
+par(mfrow = c(1,1))
+```
+
+
+A sizeable group of relaly bad people think that their partner is better than themselves, which is probably true, since they are really bad at the task. 
+
+Most people, however, think that their partner is as skilled as themselves, while a sizeable minority think that their partner is less skilled than themselves. This seems to be REGARDLESS of performance: even thoguht you might be above/below average (~90s-~100s), this has no infleucne on whether you think your partner is as skilled or less skilled than yoruselfs; your performance has littl bearing on what you think of your partner, barring the fact that you're not outrageously bad at the maze.
+
+In short, people think their partner is as skilled as them.
+
+Let's test out this hypothosis a bit more: does your perception of yoruself (vs. an objective measure of your performance) influence what you think of yoru partner
+
+```{r}
+plot(x = masterData$self_skill_avg_q, y = jitter(masterData$partner_skill_you_q), xlab = "Your performance Perception (-1 = less, 0 = same, 1 = more)", ylab = "Partner Performance vs. You", main = "Partner's skill lvl perc. vs. your skill lvl perception")
+```
+
+Wow - people who say they're really good think their partner is WORSE than them, and people who think they're AVERAGE think their partner is the SAME as them, overall!
+
+Keep in mind though that there is no skill difference between people who said they were very good at the maze vs. average at the maze though. People don't really know how skilled they are, so this self-apprasal is likely becvause of personaly differences or other dispositions.
+
+```{r}
+# How do you judge partner's performance RELATIVE TO THE AVERAGE JOE'S?
+par(mfrow = c(1,2))
+plot(y = masterData$completion_time, x = masterData$partner_skill_avg, 
+     main = "Partner Skill Lvl Avg vs. CTs", xlab = "Partner Skill Lvl vs. Avg Joe's",
+     names = c("equal", "less", "more"), ylab = "Completion time (s)")
+barplot(table(masterData$partner_skill_avg), names = c("equal", "less", "more"),
+        main = "Partner Skill Lvl Hist", ylab = "# of responses",
+        xlab = "Partner Skill Lvl vs. Avg Joe's")
+par(mfrow = c(1,1))
+```
+
+Ok - so the overwhelming majority of people thougth their partner has the same amount of skill as the average person, with a few saying that their partner was less skilled than the average person. No one thougth their partner was better than average, which kind of makes sense since they never saw their performance. 
+
+Your performance also doesn't really seem ot predict how well your partner does on the task, when compared to the average Joe. It should be this way: your oppinion of your partner compared to an abstraction/average shouldn't be influenced by your own performance, so nothing is odd about this data.
+
+#### Summary: (1) People are BAD at predicting how they are at switch tasks, unless you're outrageously bad, because then it's obvious (2) If you think you're GOOD at the task, then you will think your partner is WORSE than you, and if you think you're AVERAGE at the task, then you think your partner is the SAME as you. (3) However, most people are bad at predicting how they are on this task, so this skill appraisal is probably due to personality differences or other factors.
+
+## 3) Does people's appraisal of their own skill (i.e. am I better than average?) match the qualtative data?
+
+First, let's see what people say about their performance...
+```{r}
+par(mfrow = c(1,2))
+hist(masterData$myself_average_comparison_seconds, breaks = 200, xlim = c(-50,50), xlab = "Avg_Joe - my_perf", main = "Hist")
+abline(v = mean(masterData$myself_average_comparison_seconds), col = "red")
+boxplot(masterData$myself_average_comparison_seconds, ylim = c(-50,50), main = "Dist")
+par(mfrow = c(1,1))
+
+#REMEMBER: negative numbers indicate that the partner thinks that the average joe did WORSE than them; positive numbers indicate that the average Joe did BETTER than them
+```
+
+
+```{r}
+summary(masterData$myself_average_comparison_seconds)
+```
+
+Wow - what surprises me most is the spread of the data: even though most mover's say they're the same as the average Joe, there's actually a good spread between how much better the average Joe is from them, as a lot of them think the average Joe can do a little bit better/worse than them (i.e. about 10 seconds better/worse, accordeing to the 25th/75th percentile).
+
+The mean s uggests that the average Joe would ADD 2 seconds to someone's performance! People on average may think they're better than the average Joe.
+
+Maybe this is misleading: a 10 second difference means a lot more to someone who completed the maze in 120 seconds vs. someone who completed the maze in 60 seconds. Let's look at percents to see how much each second chagne means RELATIVE TO the mover's performance
+
+```{r}
+par(mfrow = c(1,2))
+hist(masterData$myself_average_comparison_percent, breaks = 200, xlim = c(-50,50), xlab = "avg_joe_perf/my_performance - 1 (%)", main = "Hist of Avg Joe % change")
+abline(v = mean(masterData$myself_average_comparison_percent), col = "red")
+boxplot(masterData$myself_average_comparison_percent, ylim = c(-50,50), main = "Dist of Avg Joe (%) change", ylab = "avg_joe/my_perf - 1 (%)")
+par(mfrow = c(1,1))
+
+#Remember: positive percents indicate that the average Joe would ADD x % to someone's time; negative numbers indicat ethe average Joe would take away x% from someone's time.
+```
+
+```{r}
+summary(masterData$myself_average_comparison_percent)
+```
+
+The percents portray the same story: although the spread still has a median of around 0, the average Joe, in contrast to just looking at seconds, may make someone do, on average, 2% worse on the maze (i.e. it adds ~2% to the user's time)
+
+Let's use percent, since it's relative and is more meaningful than seconds without context.
+
+```{r}
+plot(y = masterData$myself_average_comparison_percent, x = masterData$self_skill_avg, ylim = c(-60,50), xaxt = "n",  main = "Average Joe's % increase (+) or decrease (-) to mover performance", xlab = "Your perc compared to Average Joe")
+axis(side = 1, at=1:3, labels = c("Equal", "Less", "More"))
+```
+
+```{r}
+#Tell me more about the distribution for those who are 'equal' to the average Joe
+summary(subset(masterData, masterData$self_skill_avg_q == 0)$myself_average_comparison_percent)
+```
+
+Very good! So when pepople say they are about the same as the average Joe, they just mean that their performance falls into a 10% range of the average Joe's performance! In contrast, people who think they are better/worse than the average Joe think that the average Joe did 20% worse/better than them respectively.
+
+#### Summary: When people say they are about the same as the average Joe, they really think they fall within a ~10% range of the average Joe's performance. When people say they are better/worse than the average Joe, they think thier performance falls iwthin a ~20% difference of the average Joe's performance.
+
+# 4) How often do people think about thier partner? Is there a percieved social facilitation effect?
+
+```{r}
+par(mfrow = c(1,2))
+barplot(table(masterData$switch_thinking_q), ylab = "Freq", main = "Partner Thinking",
+        names.arg = c("None", "Some", "Half", "Most", "Entire"))
+boxplot(masterData$switch_thinking_q, ylab = "How often do you think of partner", 
+        main = "Partner Thinking Distribution")
+par(mfrow = c(1,1))
+```
+
+Ok - there's a pretty large spred in the data, with most people (i.e. the mean person) only thinking of their partner some of the time. I wonder if there's any performance differences?
+
+```{r}
+par(mfrow = c(1,2))
+
+#How does thinking about partner affect TRUE performance?
+plot(y = masterData$completion_time, x = masterData$switch_thinking_q, ylab = "Completion Time Z", xlab = "How often do you think of your partner?", main = "True Performance vs. Thinking")
+regression_1 <- lm(completion_time ~ switch_thinking_q, data = masterData)
+abline(regression_1)
+
+#How does thinking about partner affect PERCEIVED performance?
+plot(y = jitter(masterData$self_skill_avg_q), x = masterData$switch_thinking_q, ylab = "Your performance perception", xlab = "How often do you think of your partner?", main = "Perceived performance vs. Thinking")
+regression_2 <- lm(self_skill_avg_q ~ switch_thinking_q, data = masterData)
+abline(regression_2)
+
+par(mfrow = c(1,2))
+
+```
+
+Wow!!! It looks like the more you think about your partner, the WORSE YOU ACTUALLY DO (left graph), but the BETTER YOU THINK YOU DO (right graph). Let's examine this mroe closely.
+
+```{r}
+#Summarize true performance regression
+summary(regression_1)
+```
+
+Ok, so if you jump up a thougth catagory (i.e. you go from thinking about your partner some of the time to most of the time), you'll do worse on the maze by around 5 seconds. But the effect isn't very significant.
+
+```{r}
+#Summarize true performance regression
+summary(regression_2)
+```
+
+This regression isn't significant either, both in terms of p values and in terms of affect: thinking about your partner will make you think you do a little better on the maze, but not much.
+
+```{r}
+#How much was your performance hurt by your partner watching?
+
+par(mfrow = c(1,2))
+barplot(table(masterData$better_on_own_percent), xlab = "How much QUICKER woudld would you do the maze (percent)")
+boxplot(masterData$better_on_own_percent, ylab = "How much quicker (percent) would you be at the maze?")
+par(mfrow = c(1,1))
+```
+
+Ok - so there's no average percieved social facilitation effect.
+
+
+####Summary: (1) There's quite a bit of variance with how often someone thinks of their partner, but it doesn't really seem to affect their true performance or their percievced performance.
+
+## 5) Do people even like their partner? Why or why not?
+
+```{r}
+#Overall, how do people feel about the spectater?
+par(mfrow = c(1,2))
+barplot(table(masterData$Partner_Likeability), main = "Partner Likeability",
+        ylab = "Freq", xlab = "Likeability (1 = dislike; 7 = like)")
+boxplot(masterData$Partner_Likeability, main = "Parnter Likeability",
+        ylab = "Likeability (1 = dislike; 7 = like)")
+par(mfrow = c(1,1))
+```
+
+Wow - no-one says that their partner likes them "very much" (i.e. value of 7). The middle 50% of participants say their partner a medium amount (numeric range of 3-5). Not suprrising - it's hard ot have strong feeligns of hatred or love towards a vacant spectator.
+
+Let's look closlely: does your performance preception influence how much you like your partner?
+
+```{r}
+plot(masterData$Partner_Likeability ~ masterData$self_skill_avg, xaxt = "n", ylab = "Partner Likeability", xlab = "Your skill lvl vs. average Joe's perception", main = "Likeability vs. percieved skill")
+axis(side = 1, at=1:3, labels = c("Equal", "Less", "More"))
+```
+
+Amazing!! If you think you're the same as the average Joe, your partner likeability is neutral. If you think you're less skilled than average, you're gonna dislike your partner, because he's a jerk for watching you suffer and not switching with you. If you think you're more skilled than the average Joe, you clearly will like him more, as your partner (the avferage Joe) cooperated and didn't switch with you.
+
+Let's see if your real skill performance paints the same story... somethign tells me it won't.
+
+```{r}
+plot(masterData$Partner_Likeability ~ masterData$completion_time, ylab = "Partner Likeability", xlab = "Completion Time (s)", main = "Likeability vs. Completion_time")
+regression <- lm(masterData$Partner_Likeability ~ masterData$completion_time)
+abline(regression, col="red")
+```
+
+```{r}
+summary(regression)
+```
+
+How interesting: the longer you take on a maze, the worse you think of your partner, although this effect is insignificant. Maybe people aren't as bad of predicters of their own perofrmance as they think.
+
+####Summary: (1) People seem to like their partner an average amount (3-6 on a Likert scale). (2) if you think you're struggling on the maze however, you'll dislike your partner, and if you think you're doing exceptoinal, you'll love your partner, as he's either a dick for not switching with you or a saint for leaving you a lone. 

@@ -1,42 +1,47 @@
+#install.packages("nlme")
+
 library(ggplot2)
 library(nlme)
+
+#************************************************************
+#                     Data Preperation
+#*************************************************************
 
 moverData <- read.csv("v2_mover_date_master.csv")
 masterData <- read.csv("v2_monitor_data_master.csv")
 
 
-# 0) Data Preperation
-# - a)  First, get rid of the technical glitches in which no-one was paired up w/ a parnter.
+# --- 1)  First, get rid of the technical glitches in which no-one was paired up w/ a parnter.
 tech_excl_before <- nrow(masterData)
 masterData <- masterData[masterData$computer_overall_speed != -1,]
 tech_excl_after <- nrow(masterData)
 
 tech_excl_after - tech_excl_before
 
+# 7 exclusions.
 
-#Now, let's make some variables
+# --- 2)  Variable creation: let's make some variables
 
-# a) Monitor Z-Scores
+# -- a) Monitor Z-Scores
 masterData$monitor_completion_time_z <- (masterData$completion_time - mean(masterData$completion_time))/sd(masterData$completion_time)
 
-# b) Mover z-scores. Base it on values FROM moverData and NOT from masterData, as masterData
-# has nested data
+# -- b) Mover z-scores. Base it on values FROM moverData and NOT from masterData, as masterData
 masterData$computer_solo_time_z <- (masterData$computer_solo_time/100 - mean(moverData$completion_time))/sd(moverData$completion_time)
 
-# Monitor first 30s z-scores
+# -- c) Monitor first 30s z-scores
 masterData$X30s_avg_speed_z <- (masterData$X30s_avg_speed - mean(masterData$X30s_avg_speed)) /sd(masterData$X30s_avg_speed)
 
-#time of switch (in terms of % of performanfce) (MOVER)
+# -- d) time of switch (in terms of % of performanfce) (MOVER)
 masterData$timing_of_switch_mover <- masterData$computer_elapsed_time/masterData$computer_solo_time * 100
 
-#time of switch (in terms of % of performanfce) (TOTAL)
+# -- e) time of switch (in terms of % of performanfce) (TOTAL)
 masterData$timing_of_switch_total <- masterData$computer_elapsed_time/masterData$total_elapsed_time * 100
 
-# Improvement Index - Monitor
+# --f) Improvement Index - Monitor
 masterData$improvement_index <- 
   masterData$second_half_avg_speed - masterData$first_half_avg_speed
 
-# Improvement Index - Mover (both datasets)
+# -- g) Improvement Index - Mover
 masterData$computer_improvement_index <- 
   masterData$computer_avg_speed_second_half - masterData$computer_avg_speed_first_half
 moverData$improvement_index <- 
@@ -44,18 +49,15 @@ moverData$improvement_index <-
 masterData$computer_improvement_index_z <- (masterData$computer_improvement_index - mean(moverData$improvement_index))/sd(moverData$improvement_index)
 
 
-# Improvement after switch index - Mover (both datasets)
+# -- h) Improvement after switch index - Mover (both datasets)
 masterData$computer_post_switch_improvement_index <- 
   masterData$computer_avg_speed_after_switch - masterData$computer_avg_speed_before_switch
 
-#Effect of switch on performance
+# -- i) Effect of switch on performance (boolean)
 masterData$switch_hurt_performance <- masterData$effects_of_switch > 0
-```
 
-No errors - all variables wree made successsfully
 
-```{r}
-#Next, let's grab a few of the mover's survey responses...
+# --- 3) Next, let's grab a few of the mover's survey responses...
 
 #First, initialize the new column
 masterData$computer_switch_goodbad <- NA
@@ -79,11 +81,10 @@ for(counter in c(1:nrow(moverData))){
 #Finally, let's recode the variable.
 masterData[masterData$computer_switch_goodbad == 1,]$computer_switch_goodbad <- "Partner didn't want switch"
 masterData[masterData$computer_switch_goodbad == 2,]$computer_switch_goodbad <- "Partner wanted switch"
-```
 
 
-```{r}
-#Finally, let's exclude other faulty data
+
+# --- 4) Finally, let's exclude some more variables
 
 #First, exclude those who switched tabs, at it gives away the human-partner illusion
 masterDataExclusions <- subset(masterData, !switched_tabs_critical)
@@ -91,14 +92,13 @@ masterDataExclusions <- subset(masterData, !switched_tabs_critical)
 masterDataExclusions <- subset(masterDataExclusions, !bot_partner)
 
 
-nrow(masterData) - nrow(masterDataExclusions)
-```
-
-Wow. 72 exclusions, meaning my sample size should now be around 140.
+nrow(masterData) - nrow(masterDataExclusions) #Gets number of exclusions.
 
 
-```{r}
-#Let's make some subsets.
+# Wow. 72 exclusions, meaning my sample size should now be around 140.
+
+
+# --- 5) Let's make some subsets.
 
 #First, let's seperate the switchers from the non switchers.
 masterDataExclusions_non_switchers <- 
@@ -113,14 +113,20 @@ masterDataExclusions_bad_switchers <-
   subset(masterDataExclusions_all_switchers, switch_hurt_performance)
 
 nrow(masterDataExclusions_good_switchers) - nrow(masterDataExclusions_bad_switchers)
-```
 
-Huh - There wer 91 total switchers. This means that 32 were good switchers and 59 were bad switchers (code not shown). People must usually be bad at switching roles then...
 
-## 1) How did people perform on the maze? 
+# Huh - There wer 91 total switchers. This means that 32 were good switchers and 59 were bad switchers.
+# People must usually be bad at switching roles then...
 
-### First, let's look at the movers vs. monitors
-```{r}
+
+
+#****************************************************************************************************
+#                     Analysis I: How did people perform on the maze?
+#****************************************************************************************************
+
+# -- a) Movers vs. Monitors
+
+# - i) Graphs
 par(mfrow = c(2,2))
 
 #Movers (those paired up with a partner)
@@ -138,24 +144,24 @@ hist(masterDataExclusions$completion_time, main = "Freq of monitor completion Ti
 abline(v=mean(masterDataExclusions$completion_time), col = "Red")
 
 par(mfrow = c(1,1))
-```
-
-How intruiging! Both graphs looks extremely similar, both in terms of mean and in terms of distributions. Switching must not really have much of an impac ton performance. Let's take a closer look at the mean.
 
 
-```{r}
+#How intruiging! Both graphs looks extremely similar, both in terms of mean and in terms of distributions. Switching must not really have much of an impac ton performance. Let's take a closer look at the mean.
+
+
+# - ii) Diff of Means
 mover_mean <- mean(masterDataExclusions$computer_solo_time/100)
 monitor_mean <- mean(masterDataExclusions$completion_time)
 
 paste("Represented Mover Mean =", mover_mean, "Monitor Mean =", monitor_mean, "Dif of means = ", monitor_mean - mover_mean,sep = " ")
-```
+rm(mover_mean)
+rm(monitor_mean)
 
-As confirmed by the graph, the mean completion times are extreme similar; it seems that switching doesn't really effect performance. 
+#As confirmed by the graph, the mean completion times are extreme similar; it seems that switching doesn't really effect performance. 
 
-There's more going on than meets the eye though. How does the performance of switchers compare to that of non switchers
 
-```{r}
-#Let's test to see if the selected movers & the monitrs performed the maze differently.
+
+# - iii) T Test just to make sure there's no significance.
 holder_monitor <- data.frame("Completion Time " = masterDataExclusions$completion_time,
                              "Condition" = "monitor")
 holder_mover <- data.frame("Completion Time " = masterDataExclusions$computer_solo_time/100,
@@ -163,15 +169,18 @@ holder_mover <- data.frame("Completion Time " = masterDataExclusions$computer_so
 holder_final <- rbind(holder_monitor, holder_mover)
 
 
-summary(holder_final$Condition)
 t.test(holder_final$Completion.Time. ~ as.factor(holder_final$Condition))
-```
+
+rm(holder_monitor)
+rm(holder_mover)
+rm(holder_final)
+# Yep - no statistical signifiance
 
 
-### B) How does the performance of switchers compare to non-switchers?
-```{r}
+# -- b) How does the performance of switchers compare to non-switchers?
+
+# - i) Plots
 par(mfrow=c(2,2))
-
 barplot(prop.table(table(masterDataExclusions$switch)), ylab = "Proportion", main = "Did the switch happen?")
 boxplot(masterDataExclusions$completion_time ~ masterDataExclusions$switch, main = "Switch vs. no-switch distributions", ylab = "Completion time (s)")
 
@@ -184,187 +193,103 @@ hist(masterDataExclusions_all_switchers$completion_time,
 abline(v=mean(masterDataExclusions_all_switchers$completion_time), col = "Red")
 
 par(mfrow=c(1,1))
-```
 
-Ok - most people (~60%) switched, as confirmed by the quantatative data.
+# Ok - most people (~60%) switched, as confirmed by the quantatative data.
 
-It seemes like the mean completion time of switchers is higher than that of non-switchers, so when looking at the aggregate, pressing the siwtch button will make one do worse on performance.
+# It seemes like the mean completion time of switchers is higher than that of non-switchers, so when looking at the aggregate, pressing the siwtch button will make one do worse on performance. Let's confirm this
 
-```{r}
-switch_mean <- round(mean(masterDataExclusions_switchers$completion_time),2)
+
+# - ii) Diff of means
+switch_mean <- round(mean(masterDataExclusions_all_switchers$completion_time),2)
 no_switchmean <- round(mean(masterDataExclusions_non_switchers$completion_time),2)
 
 paste("Switch Mean =", switch_mean, "No Switch Mean =", no_switchmean, 
       "Diff of means = ", I(switch_mean - no_switchmean) ,sep = " ")
-```
+rm(switch_mean)
+rm(no_switchmean)
 
-Switching makes you perform worse by around 23 seconds, when looking at all of monitors. Let's control for this nested data however.
+# Switching makes you perform worse by around 23 seconds, when looking at all of monitors. Let's control for this nested data however.
 
-```{r}
-#Let's correct for these nasty nested data effects
+# - iii) Mixed linear effects
 mlreg = lme(completion_time ~ switch, data = masterDataExclusions, random=~1|computer_id)
 summary(mlreg)
-```
+rm(mlreg)
 
-INCREDIBLE!!!!!! Even when controlling for the nested nature of the data, SWITCHERS DO WORSE THAN NON-SWITCHERS BY A WHOLE 21 SECONDS! I know this because when switchHappened = 0, people complete the maze in around 89.6 seconds, but when switchHappened = 1, this value goes up by 21.56 seconds. Because the longer someone takes, the less his bonus will be, the time increase means that switching may be related to performing worse overall.
+#Incredible! Even when controlling for the nested nature of the data, SWITCHERS DO WORSE THAN NON-SWITCHERS BY A WHOLE 21 SECONDS! I know this because when switchHappened = 0, people complete the maze in around 89.6 seconds, but when switchHappened = 1, this value goes up by 21.56 seconds. Because the longer someone takes, the less his bonus will be, the time increase means that switching may be related to performing worse overall.
+
+# It would be interesting to prove this relationship is causal by running another condition where we force people to switch roles half way through the maze...
 
 
-## C) Look more closely at those who switched: compare the skilled to the non-skilled switchers. Us OVERALL performance (vs. effect on mover time)
 
+# -- C) Effect of the swtich on the mover's performance.
 
-```{r}
-# What effect do good switchers vs. bad switchers have on OVERALL COMPLETION TIME?
-mlreg = lme(completion_time ~ switch_hurt_performance, 
-            data = masterDataExclusions_all_switchers, random=~1|computer_id)
-summary(mlreg)
-```
-
-Wow! There's a huge difference here: people who are very good at switching (i.e. those who, after pressing the switch button, helped the group's performance), completed the maze in around 80 seconds on average (i.e. when switch_hurt_performance = false), while those who switched and helped the group's performance completed the maze, on average, 50 seconds longer. That's unbelievable.
-
-Why don't we visualize the data?
-
-```{r}
-par(mfrow=c(1,2))
-
-hist(masterDataExclusions_good_switchers$completion_time, 
-main = "Group Performance, Good Switchers", xlim=c(0,200), 
-xlab = "Completion Time (s)")
-abline(v=mean(masterDataExclusions_good_switchers$completion_time), col = "Red")
-
-hist(masterDataExclusions_bad_switchers$completion_time, 
-main = "Group Performance, Bad Switchers", xlim=c(0,200), 
-xlab = "Completion Time (s)")
-abline(v=mean(masterDataExclusions_bad_switchers$completion_time), col = "Red")
-
-par(mfrow=c(1,1))
-```
-
-Wow - one can see how differently the good vs. bad switchers performed: bad switchers really took a lot longer to complete the maze, as most of the times appear to be over 100s visually, while ti seems to be the opposite for good switchers. The means are visually very different form eachother, which is confirmed by the mixed linear effects model.
-
-### D) Ok - now  look at the effect of the swtich on the mover's performance.
-
-```{r}
-#How do skilled vs. non-skilled switchers affect the INITIAL MOVERS' perofrmance (vs. completion time)
-
+# In other words, how do switchers
 # Note - we use absolute value because we care abotu the magnitude of the effect, not the direction of the effect
 
-mlreg = lme(abs(effects_of_switch/100) ~ switch_hurt_performance, 
-            data = masterDataExclusions_all_switchers, random=~1|computer_id)
-summary(mlreg)
-```
-
-Wow! How paradoxical! Even though good switchers perform 50 seconds better than bad switchers, both good switchers and bad siwtchers both change their intiial mover's performance by roughly 35 seconds.
-
-Let's visualize this.
-
-
-```{r}
-par(mfrow=c(1,2))
+# - i) Graphs
 
 #Effects of switch on initial omver's performance
 hist(masterDataExclusions_all_switchers$effects_of_switch/100,
      main = "Effect of switch histogram", breaks = 10,
      xlab = "Effect of Switch (s)")
-abline(v=0, col = "Blue")
-abline(v=mean(masterDataExclusions_good_switchers$effects_of_switch/100), col = "Green")
-abline(v=mean(masterDataExclusions_bad_switchers$effects_of_switch/100), col = "Red")
+abline(v=mean(masterDataExclusions_all_switchers$effects_of_switch/100), col = "red")
 
-boxplot(abs(masterDataExclusions_all_switchers$effects_of_switch/100) ~ 
-          masterDataExclusions_all_switchers$switch_hurt_performance, main = "Dist",
-        ylab = "Magnitude of effect of switch (s)")
-par(mfrow=c(1,1))
-```
+# What a nice normal distribution: the effects of the switch appear normally
 
-Visually, the mixed linear effects finding becomes obvious: there is no meaningful difference between the magnitude of the effects of switching for both good switchers and bad switchers, both in terms of distribution (i.e. the spreads look roughly similar, as evident by the boxes in the boxplot) and in terms of the mean s(the mean lines in the boxplot look similar, and the lines in the histogram look roughly the same distance from 0).
 
-```{r}
-table <- prop.table(table(masterDataExclusions_all_switchers$switch_hurt_performance))
-names(table) <- c("Hurt", "Helped")
-table
-```
 
-## 2) Rectify this paradox: How are good switchers 50s better than bad switchers, but both good & bad switchers affecft initial mover's performance by 35s?
+
+#****************************************************************************************************
+#       Analysis II: Why is there a skill performance in switchers? (and also non-switchers?) 
+#****************************************************************************************************
 
 ### H-1) Maybe the good switchers switched on the bad movers & the bad switchers switched on good movers? In other words, maybe bad switchers switched on the wrong people.
 
-Vizualise it.
+### H-2) Maybe there's a skill difference. In other words, the monitors whose switch HELPED performance the most may have simply been the most skilled.
 
-```{r}
-par(mfrow=c(2,2))
+# --- 1) H-1: Incorrect switch hypothosis
 
-#Good switchers - initial mover performance NORMAL
-hist(masterDataExclusions_good_switchers$computer_solo_time/100, 
-     main = "Mover Performance, Good Sw", xlim=c(0,200), 
-     xlab = "Completion Time (s)")
-abline(v=mean(masterDataExclusions_good_switchers$computer_solo_time/100), col = "Red")
+# -- A) Incorrect switch hypothosis for SWITCHERS
 
-# Good switchers - intial mover performance Zs
-hist(masterDataExclusions_good_switchers$computer_solo_time_z, 
-     main = "Mover Performance, Good Sw", 
-     xlab = "Completion Time (z)")
-abline(v=mean(masterDataExclusions_good_switchers$computer_solo_time_z), col = "Red")
+# - i) Graphs
 
-#Bad Switchers - intiial mover performance
-hist(masterDataExclusions_bad_switchers$computer_solo_time/100, 
-     main = "Mover Performance, Bad Sw", xlim=c(0,200), 
-     xlab = "Completion Time (s)")
-abline(v=mean(masterDataExclusions_bad_switchers$computer_solo_time/100), col = "Red")
+#Scatterplot
+plot(I(effects_of_switch/100) ~ I(computer_solo_time/100), data = masterDataExclusions_all_switchers, 
+     xlab = "Mover (computer) completion time WITHOUT switch (s)", ylab = "Effect of switch (s)",
+     main = "Effects of switch from monitor vs. Initial Mover completion time")
+abline(h = 0, col = "grey")
+abline(v = mean(masterDataExclusions_all_switchers$computer_solo_time/100), col = "pink")
 
-# Bad siwtchers - inital mover performance Zs
-hist(masterDataExclusions_bad_switchers$computer_solo_time_z, 
-     main = "Mover Performance, Bad Sw", 
-     xlab = "Completion Time (z)")
-abline(v=mean(masterDataExclusions_bad_switchers$computer_solo_time_z), col = "Red")
-
-par(mfrow=c(1,1))
-```
-
-```{r}
-par(mfrow=c(1,2))
-
-#Boxplots - normal mover completion time & z mover completion time respectiv ely
-boxplot(computer_solo_time/100 ~ switch_hurt_performance,
-        data = masterDataExclusions_all_switchers,
-        ylab = "Completion time (s)", main = "Dist of Movers (Sw hurt perf?)")
-boxplot(computer_solo_time_z ~ switch_hurt_performance,
-        data = masterDataExclusions_all_switchers,
-        ylab = "Completion time (z)", main = "Dist of Movers (Sw hurt perf?)")
-
-par(mfrow=c(1,1))
-```
-
-
-I see! There seems to be a visual difference in who gets switched on: bad switchers tend to switch on participants who appear to be pretty close to the average performance (i.e. around 90 seconds), while good switchers usually switch with people who perform worse than 100 seconds on the maze (i.e. the bottom of the FALSE box in the boxplot seems to be near 100).
-
-The same story is shown via the z-score graph. The switchers who helped tended to switch on those who were roughly 1/2 a standard deviation worse than the mean (i.e. the mean z-score appears to be halfway between 0 and 1 in the boxplot for completion time-z scores, under the 'false' catagory). In contrast, switchers who hurt performance tended to switch on those 1/2 a standard deviatoin BETTER than the mean (as evident by a mean negative z score of roughly -.5, visually)
-
-Let's confirm this. Do NOT use mixed linaer effects because we're investigating who got switched on; it doesn't make sense ot control for random effects here.
-
-```{r}
-#Do bad switchers and good switchers switch on different people?
-reg <- lm(I(computer_solo_time/100) ~ switch_hurt_performance, 
-data = masterDataExclusions_all_switchers)
-summary(reg)
-```
-
-Very good! On average, people whose switch helped performance switched on those who were fairly bad (mean performance of initial mover = 122), whole those whose switch hurt jperformance tended to switch on those who were fairly good at the task (mean = ~91s; 122s - 31s).
-
-Let's verify this via z-scores.
-
-```{r}
-#Do bad switchers and good switchers switch on different people?
-reg <- lm(I(computer_solo_time_z) ~ switch_hurt_performance, 
+#Plot reg
+reg <- lm(I(effects_of_switch/100) ~ I(computer_solo_time/100), 
           data = masterDataExclusions_all_switchers)
-summary(reg)
-```
+abline(reg, col = "blue")
 
-Yep. Good switchers, on averaged, switched on people roughly 1/2 a standard deviatoin worse than the mean (i.e. intercept = .6 which is roughly .5). Bad switchers switched on people 4/5ths a standard deviation (.8 ~= .83) BETTER THAN those who good-switchers switched on!
+
+# The graph shows the following: the WORSE an initial mover does overall, the BETTER the switch would be (i.e. the effects of switch are negative & make the team do better).
+
+# However, what's striking about the graph is the following: most people who are switched on visually appear to be above average (i.e. there are many dots to the left of the pink line, the mean completion time of movers.) AND, the movers who are CLOSE TO AVERAGE, these guys, if they're switched on, WILL HAVE THEIR PERFORMANCE WORSENED! It seems that you shouldn't switch on the AVERAGE JOE, since you will HURT his performance.
+
+
+# - ii) Regression
+summary(reg) #computer_solo_time = b * effects_of_switch + a
+
+# For every one second WORSE the initial mover was, the MORE the switch HELPED performance. In other words, it's just as we would expect: the worse the mover is, the more the act of switching will help him. 
+
+# b * x + a
+reg$coefficients[2] * mean(masterDataExclusions_all_switchers$computer_solo_time/100) + reg$coefficients[1]
   
-  In conclusion, good switchers switch on people .8 standard deviatoins BETTER than bad switchers, which translates to roughly 31 seconds.
+# However, as expected visually from the graph, if you were to switch on the perfectly average participant, your act of switching will hurt his performance by 10 seconds
 
-### H-1 : Supported by data
 
-```{r}
+### H-1 : Supported by data! People really don't know when to switch
+
+
+
+# -- b) Incorrect switching hypothosis: Switchers vs. Non Switchers
+
+# - i) Graphs
+
 par(mfrow=c(2,2))
 
 #ALL Switchers - intiial mover performance
@@ -379,7 +304,6 @@ hist(masterDataExclusions_all_switchers$computer_solo_time_z,
      xlab = "Completion Time (z)")
 abline(v=mean(masterDataExclusions_all_switchers$computer_solo_time_z), col = "Red")
 
-
 #Non Switchers - intiial mover performance
 hist(masterDataExclusions[masterDataExclusions$game_mode == 2,]$computer_solo_time/100, 
      main = "Mover Performance, Non Sw", xlim=c(0,200), 
@@ -391,91 +315,86 @@ hist(masterDataExclusions[masterDataExclusions$game_mode == 2,]$computer_solo_ti
      main = "Mover Performance, Non Sw", 
      xlab = "Completion Time (z)")
 abline(v=mean(masterDataExclusions[masterDataExclusions$game_mode == 2,]$computer_solo_time_z), col = "Red")
-
 par(mfrow=c(1,1))
 
-```
 
-Verify via completoin tim e(s)
+#Ok, so it looks like the movers of non switchers did noticeably better than the movers of switchers. Non switchers must choose not to switch on the really good people, visually
 
-```{r}
+
+# - ii) T-tests
+
+#initial mover time - SECONDS
 t.test(I(computer_solo_time/100) ~ as.factor(game_mode-2), data = masterDataExclusions)
-```
 
-```{r}
+#initial mover time - Zs
 t.test(I(computer_solo_time_z) ~ as.factor(game_mode-2), data = masterDataExclusions)
-```
+
+# Ok - movers who DON'T get switched on tend to have an average completion time of 88.6 seconds, which is around 13 seconds BETTER than the completion times of those who are switched on (101.8s). This is also apparent in z-scores: people who AREN'T switched on are 4/5ths a standard deviation BETTER than those who are switched on!
+# Take away: You need to be REALLY good (4/5ths a sd) in order to not be switched on!
 
 
-
-Verify via completion time (z)
-```{r}
-#Do bad switchers and good switchers switch on different people?
+# - iii) Regression (to control for something)
 reg <- glm( (game_mode-2) ~ computer_solo_time_z, 
             data = masterDataExclusions, family = binomial(link='logit'))
-
 summary(reg)
-```
 
 
-### H-1 Follow Up: What causes this difference in who is switched on? Maybe bad switchers & good switchers have different switching strategies?
+# I forgot what this controls for, but it holds the relationship. 
 
-### H-1-A) Maybe bad switchers switch too early, and that's why they don't get an accurate measure of performance?
 
-```{r}
-par(mfrow=c(2,2))
+# H-1: NOT SUPPORTED for Switchers vs. No Switchers: no switchers only refuse to switch on VERY good people!
 
-#Do not graph GROUP eprformance - see note below
 
-#Timing of Switch - Good Sw - MOVER PERF (timing_of_switch/mover_total_completion_time)
-hist(masterDataExclusions_good_switchers$timing_of_switch_mover, 
-     xlab = "Timing of switch (%) (MOVER)", ylab = "Freq", 
-     main = "Timing of switch. Good Sw.", xlim=c(0,100), breaks = 10)
-abline(v = mean(masterDataExclusions_good_switchers$timing_of_switch_mover), col = "red")
+# --- 3) H-2 Testing: SKill Differences in switchers
 
-#Timing of Switch - bad Sw - MOVER PERF (timing_of_switch/mover_total_completion_time)
-hist(masterDataExclusions_bad_switchers$timing_of_switch_mover, 
-     xlab = "Timing of switch (%) (MOVER)", ylab = "Freq", 
-     main = "Timing of switch. Bad Sw.", xlim=c(0,100), breaks = 10)
-abline(v = mean(masterDataExclusions_bad_switchers$timing_of_switch_mover), col = "red")
 
-boxplot(timing_of_switch_mover ~ switch_hurt_performance, main = "Dist of Timing of Switch",
-        data = masterDataExclusions_all_switchers, ylab = "Timing of switch (%) (mover)")
-par(mfrow = c(1,1))
-```
+# -- a) Overall Speed
 
-Ok - this might look confusing, but I think the mover's performanc eis more reliable: we want to see when the monitor switched RELATIVE TO THE MOVER'S performance because that's a good proxy for what % of the maze the mover was done with. We don't want to see when the timing of the switch for the group performance because the monitor's performancfe confounds the initial mover's performance.
 
-The distribution also appears a lot different between good vs. bad switchers: bad switchers have a much larger distribution than good switchers, as evident by the box plot. Perhaps this means that bad switchers are a lot more ambivalent as to whether they should switch on their good partner, meaning tghey hesitate more while switching?
-  
-  With that in mind, it seems that the bad switchers actually wait LONGER to switch! Let's confirm this via mixed linaer effects
+# - i) Get rid of any outliers (i.e. all speeds should be > 0)
+masterDataExclusions_all_switchers <- masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$overall_avg_speed != -1,]
 
-```{r}
-mlreg = lme(timing_of_switch_mover ~ switch_hurt_performance, 
+# - ii) Raw results
+mlreg = lme(I(overall_avg_speed * 1000) ~ I(effects_of_switch/100), 
+            data = masterDataExclusions_all_switchers, random=~1|computer_id)
+summary(mlreg)
+
+# Ok. So for every second that the monitor HURT a mover's performance, his speed was lower by -.11 units. Let's see what this means in the next step...
+
+
+# ii) Plot
+
+plot(I(overall_avg_speed * 1000) ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers,
+     ylab = "Overall Avg Speed", xlab = "Effects of switch (s)", ylim = c(-10,100))
+reg <- lm(I(overall_avg_speed * 1000) ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers)
+abline(reg)
+
+# - ii) What does metric mean?
+mlreg <- lme(I(overall_avg_speed * 1000) ~ I(human_elapsed_time/100), data = masterDataExclusions_all_switchers,
+             random=~1|computer_id)
+summary(mlreg)
+
+# For every SECOND LONGER the monitor took, his speed decreased by .078 units. 
+
+# - iii) What do these mean?
+# .11 speed/effect_of_switch / .078 speed/second = ____ effect_of_switch/second
+0.11943/0.077896
+
+#Ok, so combining these two measures, it seems that  
+
+masterDataExclusions_all_switchers$human_elapsed_time
+     
+plot(I(overall_avg_speed * 1000) ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers, ylim = c(0,50))
+reg <- lm(I(overall_avg_speed * 1000) ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers)
+abline(reg)
+
+
+# -- a) Improvement index
+mlreg = lme(I(improvement_index * 1000) ~ effects_of_switch, 
 data = masterDataExclusions_all_switchers, random=~1|computer_id)
 summary(mlreg)
-```
 
-Ok - so good switchers usually wait until the mover is 22% done, and then they hit the switch button. The mean completion time of movers who were switched on for good swithcers is 122 seconds, so the average good switcher waits 26.89 seconds, on average, before deciding to hit the switch button.
-
-Bad switchers, however wait a bit longer to hit the switch button: they wait until their partner is roughly 35% done with their performance (22 + 13 = 35. The mean completion time of movers who were switched on for bad switchers is 90.76 seconds, so this translates onto 31.77 seconds.
-
-In short, because the bad switchers wait longer than good switchers when deciding whether or not to switch, this could indicate that bad switchers are a bit more ambivalent as to whether or not to swtich. Nevertheless, they still choose to switch despite teh ambiguity
-
-
-### H-1-A COnfirmed: People who are bad at switching switch later than those who are good at switching, perhaps because they are more ambivalent & hesitant as to wheteher to switch.
-
-### H-2: Maybe there's a skill difference?
-  
-  ### H-2: Is there a skill difference between good switchers & bad switchers?
-  
-  To test this, let's look at average speeds.
-
-```{r}
-mlreg = lme(switch_hurt_performance ~ I(improvement_index * 1000), 
-data = masterDataExclusions_all_switchers, random=~1|computer_id)
-summary(mlreg)
-```
+#The 
 
 ```{r}
 mlreg = lme(completion_time ~ I(improvement_index * 1000), 
@@ -531,6 +450,60 @@ summary(masterDataExclusions_all_switchers$human_reset_counter)
 
 
 ### H-2: Not supported: There is no skill difference
+
+
+
+
+
+### H-1 Follow Up: What causes this difference in who is switched on? Maybe bad switchers & good switchers have different switching strategies?
+
+### H-1-A) Maybe bad switchers switch too early, and that's why they don't get an accurate measure of performance?
+
+```{r}
+par(mfrow=c(2,2))
+
+#Do not graph GROUP eprformance - see note below
+
+#Timing of Switch - Good Sw - MOVER PERF (timing_of_switch/mover_total_completion_time)
+hist(masterDataExclusions_good_switchers$timing_of_switch_mover, 
+     xlab = "Timing of switch (%) (MOVER)", ylab = "Freq", 
+     main = "Timing of switch. Good Sw.", xlim=c(0,100), breaks = 10)
+abline(v = mean(masterDataExclusions_good_switchers$timing_of_switch_mover), col = "red")
+
+#Timing of Switch - bad Sw - MOVER PERF (timing_of_switch/mover_total_completion_time)
+hist(masterDataExclusions_bad_switchers$timing_of_switch_mover, 
+     xlab = "Timing of switch (%) (MOVER)", ylab = "Freq", 
+     main = "Timing of switch. Bad Sw.", xlim=c(0,100), breaks = 10)
+abline(v = mean(masterDataExclusions_bad_switchers$timing_of_switch_mover), col = "red")
+
+boxplot(timing_of_switch_mover ~ switch_hurt_performance, main = "Dist of Timing of Switch",
+        data = masterDataExclusions_all_switchers, ylab = "Timing of switch (%) (mover)")
+par(mfrow = c(1,1))
+```
+
+Ok - this might look confusing, but I think the mover's performanc eis more reliable: we want to see when the monitor switched RELATIVE TO THE MOVER'S performance because that's a good proxy for what % of the maze the mover was done with. We don't want to see when the timing of the switch for the group performance because the monitor's performancfe confounds the initial mover's performance.
+
+The distribution also appears a lot different between good vs. bad switchers: bad switchers have a much larger distribution than good switchers, as evident by the box plot. Perhaps this means that bad switchers are a lot more ambivalent as to whether they should switch on their good partner, meaning tghey hesitate more while switching?
+  
+  With that in mind, it seems that the bad switchers actually wait LONGER to switch! Let's confirm this via mixed linaer effects
+
+```{r}
+mlreg = lme(timing_of_switch_mover ~ switch_hurt_performance, 
+data = masterDataExclusions_all_switchers, random=~1|computer_id)
+summary(mlreg)
+```
+
+Ok - so good switchers usually wait until the mover is 22% done, and then they hit the switch button. The mean completion time of movers who were switched on for good swithcers is 122 seconds, so the average good switcher waits 26.89 seconds, on average, before deciding to hit the switch button.
+
+Bad switchers, however wait a bit longer to hit the switch button: they wait until their partner is roughly 35% done with their performance (22 + 13 = 35. The mean completion time of movers who were switched on for bad switchers is 90.76 seconds, so this translates onto 31.77 seconds.
+
+In short, because the bad switchers wait longer than good switchers when deciding whether or not to switch, this could indicate that bad switchers are a bit more ambivalent as to whether or not to swtich. Nevertheless, they still choose to switch despite teh ambiguity
+
+
+### H-1-A COnfirmed: People who are bad at switching switch later than those who are good at switching, perhaps because they are more ambivalent & hesitant as to wheteher to switch.
+
+### H-2: Maybe there's a skill difference?
+  
 
 
 ## 2) Why cuases someone to press the "switch" button? For ALL switchers

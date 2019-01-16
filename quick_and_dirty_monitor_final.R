@@ -1,7 +1,7 @@
 #install.packages("nlme")
-
-library(ggplot2)
-library(nlme)
+library(tidyverse) #remove duplicate values
+library(ggplot2) #beautiful plots
+library(nlme) #mixed linear effects
 
 #************************************************************
 #                     Data Preperation
@@ -137,7 +137,8 @@ rm(after_exclusions)
 # - ii) Calculate z scores
 masterDataExclusions_all_switchers$overall_avg_speed_z <- (masterDataExclusions_all_switchers$overall_avg_speed - mean(masterDataExclusions_all_switchers$overall_avg_speed)) /sd(masterDataExclusions_all_switchers$overall_avg_speed)
 
-
+# -- c) Switcher improvement index Zs 
+masterDataExclusions_all_switchers$improvement_index_z <- (masterDataExclusions_all_switchers$computer_improvement_index - mean(masterDataExclusions_all_switchers$computer_improvement_index))/sd(masterDataExclusions_all_switchers$computer_improvement_index)
 
 
 #****************************************************************************************************
@@ -333,46 +334,50 @@ rm(reg_z)
 # For every one standard deviation WORSE that the intial mover was, the MONITOR HELPED performance by 1/2 a standard deviation (-.49 zs)
 
 # - iii) Regression - SECONDS
-summary(reg_s) #computer_solo_time = b * effects_of_switch + a
+mlreg = lme(I(effects_of_switch/100) ~ I(computer_solo_time/100), 
+            data = masterDataExclusions, random=~1|computer_id)
+summary(mlreg) #computer_solo_time = b * effects_of_switch + a
 
-# For every one second WORSE the initial mover was, the MORE the switch HELPED performance by .6 seconds. In other words, it's just as we would expect: the worse the mover is, the more the act of switching will help him. 
+# For every one second WORSE the initial mover was, the MORE the switch HELPED performance by .43 seconds. In other words, it's just as we would expect: the worse the mover is, the more the act of switching will help him. 
 
 
 # - iv) Seconds regression 1: What happens if the monitor switched on the perfectly average mover?
-
 #y = b * x + a
-reg_s$coefficients[2] * mean(masterDataExclusions$computer_solo_time/100) + reg_s$coefficients[1]
 
-# However, as expected visually from the graph, if you were to switch on the perfectly average participant, your act of switching will hurt his performance by 13 seconds!
+fixed.effects(mlreg)[2] * mean(masterDataExclusions$computer_solo_time/100) + fixed.effects(mlreg)[1]
+
+# However, as expected visually from the graph, if you were to switch on the perfectly average participant, your act of switching will hurt his performance by 6.32 seconds!
 
 
 # - v) Seconds regression 2: the average mover didn't switch on the average Joe; they switched on someone insignificantly worse than the average Joe (roughly 2-3 seconds worse). What happens if they switch on him?
 
 #y = b * x + a
-reg_s$coefficients[2] * mean(masterDataExclusions_all_switchers$computer_solo_time/100) + reg_s$coefficients[1]
+fixed.effects(mlreg)[2] * mean(masterDataExclusions_all_switchers$computer_solo_time/100) + fixed.effects(mlreg)[1]
 
-# There's not much of a difference here: the average switcher hurt the barely-less-than-average Joe's performance by roughly 10 seconds.
+# There's not much of a difference here: the average switcher hurt the barely-less-than-average Joe's performance by roughly 3.94 seconds.
 
 
 # - vi) Seconds regression 3: How bad must someone be in order for the act of switching to be beneficial?
 
 #y = b * x + a. If y (effects of switch) = 0 (break even point), then 0 = bx+a; x = -a/b
-break_even_point <- -reg_s$coefficients[1]/reg_s$coefficients[2] #118.71s
-(break_even_point - mean(moverData$completion_time))/sd(moverData$completion_time)# Z-score equivlence: .5zs
+break_even_point <- -fixed.effects(mlreg)[1]/fixed.effects(mlreg)[2] #111.34s
+(break_even_point - mean(moverData$completion_time))/sd(moverData$completion_time)# Z-score equivlence: .31zs
 rm(break_even_point)
 
-# Woah: you really need to suck at the maze in order for switching ot help performance: you need to do the maze in 118.7s, which is 19.2 seconds WORSE THAN AVERAGE! In other words, you neeed to be 1/2 a standard deviation WORSE THAN THE AVERAGE JOE for swtiching to take effect! The problem is though that most people switch ont he average Joe, which produces the adverse effects
+# Woah: you really need to suck at the maze in order for switching ot help performance: you need to do the maze in 111.34s, which is 11.82 seconds WORSE THAN AVERAGE! In other words, you neeed to be 1/3 a standard deviation WORSE THAN THE AVERAGE JOE for swtiching to take effect! The problem is though that most people switch ont he average Joe, which produces the adverse effects
 
 
 # - vii) Seconds regression 4: What would've happened if the average NON-SWITCHER switched on the average SWITCHER
 
 #y = b * x + a
-reg_s$coefficients[2] * mean(masterDataExclusions_non_switchers$computer_solo_time/100) + reg_s$coefficients[1]
+fixed.effects(mlreg)[2] * mean(masterDataExclusions_non_switchers$computer_solo_time/100) + fixed.effects(mlreg)[1]
+rm(mlreg)
+rm(reg_z)
 rm(reg_s) 
 
-#Amazing: If the average NON-SWITCHER would have switched on their partner, they would've hurt their teams performance by 18.78 seconds, which is ~8.8 seconds more damaging than the average switcher. To be hoenst though, this 8.8 seconds isn't that much more.
+#Amazing: If the average NON-SWITCHER would have switched on their partner, they would've hurt their teams performance by 9.99 seconds, which is ~8.8 seconds more damaging than the average switcher. To be hoenst though, this 10 seconds isn't that much more.
 
-### H-1 : Supported by data! People really don't know when to switch: you need to switch on someone 1/2 a SD WORSE than the average Joe for switching to be optimal, but the problem is that people usually switch on the average Joe, which produces the suboptimal effects!
+### H-1 : Supported by data! People really don't know when to switch: you need to switch on someone 1/3 a SD WORSE than the average Joe for switching to be optimal, but the problem is that people usually switch on the average Joe, which produces the suboptimal effects!
 
 
 # -- b) Incorrect switching hypothosis: Switchers vs. Non Switchers
@@ -435,6 +440,8 @@ summary(reg)
 # H-1: NOT SUPPORTED for Switchers vs. No Switchers: no switchers only refuse to switch on people marginally better than the average Joe
 
 
+
+
 # --- 3) H-2 Testing: SKill Differences in SWITCHERS
 
 
@@ -466,10 +473,10 @@ abline(reg, col = "blue")
 abline(v = 0, col = "gray")
 abline(h = 0, col = "gray")
 
-plot(I(overall_avg_speed_z) ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers,
-     ylab = "Overall Avg Speed (z)", xlab = "Effects of switch (s)", ylim = c(-5,5),
+plot(I(overall_avg_speed_z) ~ I(effects_of_switch_z), data = masterDataExclusions_all_switchers,
+     ylab = "Overall Avg Speed (z)", xlab = "Effects of switch (z)", ylim = c(-5,5),
      main = "Overall Speed vs. Effect of Switch (z)")
-reg <- lm(I(overall_avg_speed_z) ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers)
+reg <- lm(I(overall_avg_speed_z) ~ I(effects_of_switch_z), data = masterDataExclusions_all_switchers)
 abline(reg, col = "blue")
 abline(v = 0, col = "gray")
 abline(h = 0, col = "gray")
@@ -477,80 +484,76 @@ par(mfrow=c(1,1))
 
 #Ok -  so it looks like a slight decrease in speed leads to a a pretty severe PENTALTY when you're looking at the effect of switching. In other words, people who switched who really hurt performance tended to have worse speeds.
 
-#TODO - do same thing for imrpovment Index & other measures.
+# iv) Are the least skilled people also the same as those who don't knwo when to switch?
+reg <- lme(I(overall_avg_speed_z) ~ I(computer_solo_time_z), 
+             data = masterDataExclusions_all_switchers, random=~1|computer_id)
+summary(reg)
 
-# iv) Reg: What does a 1 standard deviation increas
-sd(masterDataExclusions_all_switchers$effects_of_switch/100)
-
-# -- a) Improvement index
-mlreg = lme(I(improvement_index * 1000) ~ effects_of_switch, 
-data = masterDataExclusions_all_switchers, random=~1|computer_id)
-summary(mlreg)
-
-#The 
-
-```{r}
-mlreg = lme(completion_time ~ I(improvement_index * 1000), 
-data = masterDataExclusions_all_switchers, random=~1|computer_id)
-summary(mlreg)
-
-```
-
-```{r}
-summary(masterDataExclusions_all_switchers$improvement_index * 1000)
-```
+#Wow! There's NO CORRELATION between those who are the least skilled vs. those who don't know when to switch! It seems that H-2 is also supported: people who's switch HURTS performance ten dto be LESS SKILLED, as evident by overall average speed
 
 
-Avg Speed
+# -- b) Improvment Index
 
+# - i) Raw results: seconds (effect of switchh
+reg_s <- lme(I(improvement_index) ~ I(effects_of_switch/100), 
+             data = masterDataExclusions_all_switchers, random=~1|computer_id)
+summary(reg_s)
 
-```{r}
-mlreg = lme(switch_hurt_performance ~ I(overall_avg_speed * 1000), 
-data = masterDataExclusions_all_switchers, random=~1|computer_id)
-summary(mlreg)
-```
-
-```{r}
-mlreg = lme(completion_time ~ I(overall_avg_speed * 1000), 
-data = masterDataExclusions_all_switchers, random=~1|computer_id)
-summary(mlreg)
-
-```
-
-```{r}
-summary(masterDataExclusions_all_switchers$overall_avg_speed * 1000)
-```
-
-
-Wall Rams
-
-```{r}
-mlreg = lme(switch_hurt_performance ~ human_reset_counter, 
-data = masterDataExclusions_all_switchers, random=~1|computer_id)
-summary(mlreg)
-```
-
-```{r}
-mlreg = lme(completion_time ~ human_reset_counter, 
-data = masterDataExclusions_all_switchers, random=~1|computer_id)
-summary(mlreg)
-
-```
-
-```{r}
-summary(masterDataExclusions_all_switchers$human_reset_counter)
-```
-
-
-### H-2: Not supported: There is no skill difference
+# No significant/meaningful difference in imrpovement index: people who were great at switching improved just as much as people who were bad at swiching
 
 
 
+# -- c) Reset Count (wall rams)
+
+# - i) Raw results: seconds (effect of switchh
+reg_s <- lme(human_reset_counter ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers, 
+             random=~1|computer_id)
+summary(reg_s)
+
+#Ok, for every second longer that someone hurts one's switch, they ram into the wall .078 more times
+
+# - ii) Raw results: seconds (effect of switchh
+reg_z <- lme(human_reset_counter ~ I(effects_of_switch_z), data = masterDataExclusions_all_switchers, 
+             random=~1|computer_id)
+summary(reg_z)
+
+#Very good - for every standard deviation WORSE a monitor makes a mover's eprformance, the monitor will ram into the wall 3.72 more times.
 
 
-### H-1 Follow Up: What causes this difference in who is switched on? Maybe bad switchers & good switchers have different switching strategies?
+# - iii) Plot
+plot(human_reset_counter ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers,
+     ylab = "Monitor Wall Rams (# of rams)", xlab = "Effects of switch (s)", 
+     main = "Wall Rams vs. Effects of Switch", ylim = c(0,15))
+abline(v = 0, col = "black")
+abline(h = mean(masterDataExclusions_all_switchers$human_reset_counter), col = "red")
 
-### H-1-A) Maybe bad switchers switch too early, and that's why they don't get an accurate measure of performance?
+# No significant/meaningful difference in imrpovement index: people who were great at switching improved just as much as people who were bad at swiching
+
+
+# - iv) Are the people who ram into the most walls also the people who don't know when to switch?
+reg_s <- lme(human_reset_counter ~ I(computer_solo_time/100), data = masterDataExclusions_all_switchers, 
+             random=~1|computer_id)
+summary(reg_s)
+
+#No correlation again (p=.59). 
+
+
+### H-2: Supported. Monitors who make movers worse off are less skilled, as evident by overall average speed and wall rams, but NOT improvement (the learning metric)! Furthermore, this is NOT CORRELATED with mover skill (i.e. computer overall time), meaning the monitors who are bad at switching are also NOT those who are the least skilled
+
+# TODO - Go back and re-run the correlations that test whether the least skilled people are also the same who suck at switching, but isntead of using computer_solo_time, use the speed BEFORE the switch! 
+
+
+
+#*****************************************************************************************************
+#       Analysis III: Why is there a skill performance in switchers? (and also non-switchers?) 
+#*****************************************************************************************************
+
+
+### H-1) Early Switch Hyptohosis: Maybe bad switchers switch too early, and that's why they don't get an accurate measure of performance?
+
+# --- 1) Test Early Switch Hypothosis: Maybe those who are better at switching just wait later?
+
+plot( ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers)
 
 ```{r}
 par(mfrow=c(2,2))

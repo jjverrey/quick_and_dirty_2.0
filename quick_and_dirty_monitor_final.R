@@ -1,5 +1,5 @@
 #install.packages("nlme")
-library(tidyverse) #remove duplicate values
+
 library(ggplot2) #beautiful plots
 library(nlme) #mixed linear effects
 
@@ -17,6 +17,8 @@ masterData <- masterData[masterData$computer_overall_speed != -1,]
 tech_excl_after <- nrow(masterData)
 
 tech_excl_after - tech_excl_before
+rm(tech_excl_after)
+rm(tech_excl_before)
 
 # 7 exclusions.
 
@@ -121,8 +123,17 @@ nrow(masterDataExclusions_good_switchers) - nrow(masterDataExclusions_bad_switch
 # -- a) Effects of Switch Zs among those who switched ONLY
 masterDataExclusions_all_switchers$effects_of_switch_z <- (masterDataExclusions_all_switchers$effects_of_switch - mean(masterDataExclusions_all_switchers$effects_of_switch))/sd(masterDataExclusions_all_switchers$effects_of_switch)
 
+# -- b) Switcher improvement index Zs 
+masterDataExclusions_all_switchers$improvement_index_z <- (masterDataExclusions_all_switchers$computer_improvement_index - mean(masterDataExclusions_all_switchers$computer_improvement_index))/sd(masterDataExclusions_all_switchers$computer_improvement_index)
 
-# -- b) First 30s z-scores for switchers ONLY (non-switchers speed values of -1)
+# -- c) Computer average speed before swith Zs
+masterDataExclusions_all_switchers$computer_avg_speed_before_switch_z <- (masterDataExclusions_all_switchers$computer_avg_speed_before_switch - mean(masterDataExclusions_all_switchers$computer_avg_speed_before_switch))/sd(masterDataExclusions_all_switchers$computer_avg_speed_before_switch)
+
+# -- c) Computer average speed after switch Zs
+masterDataExclusions_all_switchers$computer_avg_speed_after_switch_z <- (masterDataExclusions_all_switchers$computer_avg_speed_after_switch - mean(masterDataExclusions_all_switchers$computer_avg_speed_after_switch))/sd(masterDataExclusions_all_switchers$computer_avg_speed_after_switch)
+
+
+# -- c) First 30s z-scores for switchers ONLY (non-switchers speed values of -1)
 
 # - i) Exclude glitched speed computations (i.e. speed values of -1)
 before_exclusions <- nrow(masterDataExclusions_all_switchers)
@@ -137,9 +148,43 @@ rm(after_exclusions)
 # - ii) Calculate z scores
 masterDataExclusions_all_switchers$overall_avg_speed_z <- (masterDataExclusions_all_switchers$overall_avg_speed - mean(masterDataExclusions_all_switchers$overall_avg_speed)) /sd(masterDataExclusions_all_switchers$overall_avg_speed)
 
-# -- c) Switcher improvement index Zs 
-masterDataExclusions_all_switchers$improvement_index_z <- (masterDataExclusions_all_switchers$computer_improvement_index - mean(masterDataExclusions_all_switchers$computer_improvement_index))/sd(masterDataExclusions_all_switchers$computer_improvement_index)
+# -- d) Get position of switch - checkpoint
 
+# - i) Create a vector of positions of switch via for loops.
+position_of_switch_vector <- 0
+for(counter in c(1:nrow(masterDataExclusions_all_switchers))){ #Get every single mover's progress string
+  progress_string <- toString(masterDataExclusions_all_switchers$computer_progress_string[counter])
+  progress_string_stamps <- unlist(strsplit(progress_string, "\\W;")) #Split progress string by character ';'
+  time_of_switch <- masterDataExclusions_all_switchers$computer_elapsed_time[counter]  
+  
+  for(stamp_counter in c(1:length(progress_string_stamps))){ #Loops through every stamp in progress string
+    current_stamp <- unlist(strsplit(progress_string_stamps[stamp_counter], ","))
+    
+    if(stamp_counter == 1) #removes the ';' that comes before the first timestamp
+      current_stamp[1] <- substr(current_stamp[1], 2, nchar(current_stamp[1])) 
+    
+    if(as.numeric(current_stamp[1]) >= time_of_switch){
+      position_of_switch <- as.numeric(current_stamp[2])
+      if(position_of_switch != 0)
+        position_of_switch <- position_of_switch-1
+      break
+    }
+  }#end of for(stamp_counter)
+  position_of_switch_vector[counter] <- position_of_switch
+}#end of for(masterDataExclusions)
+
+# - ii) Add positions of switch to the dataset
+masterDataExclusions_all_switchers$position_of_switch <- position_of_switch_vector
+
+# - iii) Variable Cleanup
+rm(current_stamp)
+rm(progress_string)
+rm(progress_string_stamps)
+rm(position_of_switch)
+rm(position_of_switch_vector)
+rm(counter)
+rm(time_of_switch)
+rm(stamp_counter)
 
 #****************************************************************************************************
 #                     Analysis I: How did people perform on the maze?
@@ -285,6 +330,7 @@ hist(masterDataExclusions_all_switchers$effects_of_switch_z,
 abline(v=mean(masterDataExclusions_all_switchers$effects_of_switch_z), col = "red")
 par(mfrow=c(1,1))
 
+shapiro.test(masterDataExclusions_all_switchers$effects_of_switch_z)
 # The graph appears pretty close to norally distributed. This is very surprising: why is there such a wide distribution regarding whether the switch is optimal?
 
 
@@ -319,7 +365,6 @@ abline(v = mean(masterDataExclusions_non_switchers$computer_solo_time/100), col 
 reg_s <- lm(I(effects_of_switch/100) ~ I(computer_solo_time/100), 
           data = masterDataExclusions_all_switchers)
 abline(reg_s, col = "blue")
-
 
 # The graph shows the following: the WORSE an initial mover does overall, the BETTER the switch would be (i.e. the effects of switch are negative & make the team do better).
 
@@ -380,7 +425,30 @@ rm(reg_s)
 ### H-1 : Supported by data! People really don't know when to switch: you need to switch on someone 1/3 a SD WORSE than the average Joe for switching to be optimal, but the problem is that people usually switch on the average Joe, which produces the suboptimal effects!
 
 
-# -- b) Incorrect switching hypothosis: Switchers vs. Non Switchers
+# -- B) Wait... is there really ANY difference between who's switched on vs. not switched on?
+
+# - i) Graphs
+par(mfrow = c(1,3))
+hist(masterData$computer_solo_time/100, main = "Represented Movers", xlab = "Mover Time (s)")
+abline(v = mean(masterData$computer_solo_time/100), col = "red")
+hist(masterDataExclusions_all_switchers$computer_solo_time/100, main = "Movers who were switched on", xlab = "Mover Time (s)")
+abline(v = mean(masterDataExclusions_all_switchers$computer_solo_time/100), col = "red")
+hist(masterDataExclusions_non_switchers$computer_solo_time/100, main = "Movers who were NOT switched on", xlab = "Mover Time (s)")
+abline(v = mean(masterDataExclusions_non_switchers$computer_solo_time/100), col = "red")
+par(mfrow = c(1,1))
+
+#Damn!!! There doesn't really apepar to be any difference 
+
+# - Regression
+reg = lm(I(computer_solo_time/100) ~ I(game_mode == 2), 
+            data = masterDataExclusions)
+summary(reg) #computer_solo_time = b * effects_of_switch + a
+
+#Even though there is a significant difference of 13 seconds, the groups are nonetheless very similar.
+
+
+
+# -- C) Incorrect switching hypothosis: Switchers vs. Non Switchers
 
 # - i) Graphs
 
@@ -545,7 +613,7 @@ summary(reg_s)
 
 
 #*****************************************************************************************************
-#       Analysis III: Why is there a skill performance in switchers? (and also non-switchers?) 
+#       Analysis III: Does waiting have anything to do with effectiveness of switch? 
 #*****************************************************************************************************
 
 
@@ -553,53 +621,192 @@ summary(reg_s)
 
 # --- 1) Test Early Switch Hypothosis: Maybe those who are better at switching just wait later?
 
-plot( ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers)
+# -- A) Create two datasets
+center_data <- masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$start_from_center,]
+edge_data <- masterDataExclusions_all_switchers[!masterDataExclusions_all_switchers$start_from_center,]
 
-```{r}
-par(mfrow=c(2,2))
+nrow(center_data) - nrow(edge_data)
+#6 more people started from the edge than from the center.
 
-#Do not graph GROUP eprformance - see note below
 
-#Timing of Switch - Good Sw - MOVER PERF (timing_of_switch/mover_total_completion_time)
-hist(masterDataExclusions_good_switchers$timing_of_switch_mover, 
-     xlab = "Timing of switch (%) (MOVER)", ylab = "Freq", 
-     main = "Timing of switch. Good Sw.", xlim=c(0,100), breaks = 10)
-abline(v = mean(masterDataExclusions_good_switchers$timing_of_switch_mover), col = "red")
+# -- B) Use Elapsed Time
 
-#Timing of Switch - bad Sw - MOVER PERF (timing_of_switch/mover_total_completion_time)
-hist(masterDataExclusions_bad_switchers$timing_of_switch_mover, 
-     xlab = "Timing of switch (%) (MOVER)", ylab = "Freq", 
-     main = "Timing of switch. Bad Sw.", xlim=c(0,100), breaks = 10)
-abline(v = mean(masterDataExclusions_bad_switchers$timing_of_switch_mover), col = "red")
+# - i) Graphs
+par(mfrow=c(1,2))
+plot(I(effects_of_switch/100) ~ I(computer_elapsed_time/100), data = center_data,
+     xlab = "Computer Elapsed Time (s)", ylab = "Effects of switch", main = "Center")
+abline(v = mean(center_data$computer_elapsed_time/100), col = "Red")
+abline(h = 0, col = "black")
+plot(I(effects_of_switch/100) ~ I(computer_elapsed_time/100), data = edge_data,
+     xlab = "Computer Elapsed Time (s)", ylab = "Effects of switch", main = "Edge")
+abline(v = mean(edge_data$computer_elapsed_time/100), col = "Red")
+abline(h = 0, col = "black")
+par(mfrow=c(1,1))
 
-boxplot(timing_of_switch_mover ~ switch_hurt_performance, main = "Dist of Timing of Switch",
-        data = masterDataExclusions_all_switchers, ylab = "Timing of switch (%) (mover)")
-par(mfrow = c(1,1))
-```
+# There doesn't seem to be any correlation - why's that? In other words, it doesn't appear to matter how long one waits before they press the switch button: people who press the switch button early on are just as likely to hurt the mover's performance as those who wait 100 seconds.
 
-Ok - this might look confusing, but I think the mover's performanc eis more reliable: we want to see when the monitor switched RELATIVE TO THE MOVER'S performance because that's a good proxy for what % of the maze the mover was done with. We don't want to see when the timing of the switch for the group performance because the monitor's performancfe confounds the initial mover's performance.
-
-The distribution also appears a lot different between good vs. bad switchers: bad switchers have a much larger distribution than good switchers, as evident by the box plot. Perhaps this means that bad switchers are a lot more ambivalent as to whether they should switch on their good partner, meaning tghey hesitate more while switching?
-  
-  With that in mind, it seems that the bad switchers actually wait LONGER to switch! Let's confirm this via mixed linaer effects
-
-```{r}
-mlreg = lme(timing_of_switch_mover ~ switch_hurt_performance, 
-data = masterDataExclusions_all_switchers, random=~1|computer_id)
+# - ii) mixed linear reg - CENTER
+mlreg <- lme(I(effects_of_switch/100) ~ I(computer_elapsed_time/100), data = center_data, 
+             random=~1|computer_id)
 summary(mlreg)
-```
 
-Ok - so good switchers usually wait until the mover is 22% done, and then they hit the switch button. The mean completion time of movers who were switched on for good swithcers is 122 seconds, so the average good switcher waits 26.89 seconds, on average, before deciding to hit the switch button.
+# No significant relationship.
 
-Bad switchers, however wait a bit longer to hit the switch button: they wait until their partner is roughly 35% done with their performance (22 + 13 = 35. The mean completion time of movers who were switched on for bad switchers is 90.76 seconds, so this translates onto 31.77 seconds.
+# - ii) mixed linear reg - EDGE
+mlreg <- lme(I(effects_of_switch/100) ~ I(computer_elapsed_time/100), data = edge_data, 
+             random=~1|computer_id)
+summary(mlreg)
 
-In short, because the bad switchers wait longer than good switchers when deciding whether or not to switch, this could indicate that bad switchers are a bit more ambivalent as to whether or not to swtich. Nevertheless, they still choose to switch despite teh ambiguity
+# No significant relationship.
 
 
-### H-1-A COnfirmed: People who are bad at switching switch later than those who are good at switching, perhaps because they are more ambivalent & hesitant as to wheteher to switch.
+# -- B) Use % of total performance
 
-### H-2: Maybe there's a skill difference?
-  
+# - i) Graphs
+par(mfrow=c(1,2))
+plot(I(effects_of_switch/100) ~ I(timing_of_switch_mover), data = center_data,
+     xlab = "Timing of Switch, Mover (% complete)", ylab = "Effects of switch", main = "Center")
+abline(v = mean(center_data$timing_of_switch_mover), col = "Red")
+abline(h = 0, col = "black")
+plot(I(effects_of_switch/100) ~ I(timing_of_switch_mover), data = edge_data,
+     xlab = "Timing of Switch, Mover (% complete)", ylab = "Effects of switch", main = "Edge")
+abline(v = mean(edge_data$timing_of_switch_mover), col = "Red")
+abline(h = 0, col = "black")
+par(mfrow=c(1,1))
+
+# How fascinating! When we look at the % complete the intial mover is, NOW there seems to be a significant relationship: the longer one waits, the more likely he is to foul up the switch
+
+# - ii) mixed linear reg - CENTER
+mlreg <- lme(I(effects_of_switch/100) ~ I(timing_of_switch_mover), data = center_data, 
+             random=~1|computer_id)
+summary(mlreg)
+
+# - iii) mixed linear reg - EDGE
+mlreg <- lme(I(effects_of_switch/100) ~ I(timing_of_switch_mover), data = edge_data, 
+             random=~1|computer_id)
+summary(mlreg)
+
+# Nope - this relationship is insignificant (again) for both the enter and edge
+
+
+# -- C) Use Position of switch (checkpoint)
+
+# - i) Graphs
+par(mfrow = c(1,2))
+plot(I(effects_of_switch/100) ~ position_of_switch, 
+     data = center_data, xlab = "Position of Switch (checkpoint)", ylab = "Effects of switch",  main = "Center")
+abline(v = mean(center_data$position_of_switch), col = "Red")
+abline(h = 0, col = "black")
+plot(I(effects_of_switch/100) ~ position_of_switch, 
+     data = edge_data, xlab = "Position of Switch (checkpoint)", ylab = "Effects of switch",  main = "Edge")
+abline(v = mean(edge_data$position_of_switch), col = "Red")
+abline(h = 0, col = "black")
+par(mfrow=c(1,1))
+
+# How fascinating! When we look at the % complete the intial mover is, NOW there seems to be a significant relationship: the longer one waits, the more likely he is to foul up the switch
+
+# - ii) mixed linear reg - center
+mlreg <- lme(I(effects_of_switch/100) ~ position_of_switch, data = center_data, 
+             random=~1|computer_id)
+summary(mlreg)
+
+# - ii) mixed linear reg - edge
+mlreg <- lme(I(effects_of_switch/100) ~ position_of_switch, data = edge_data, 
+             random=~1|computer_id)
+summary(mlreg)
+
+# Nope - this is insignificant again
+
+
+# -- D) Cleanup
+rm(edge_data)
+rm(center_data)
+
+
+
+
+#*****************************************************************************************************
+#       Analysis IV: How do switchers determine when to switch? Is it even a good metric?
+#*****************************************************************************************************
+
+# --- 1) What do monitors rely on when they decide whether they should switch?
+
+# -- A) Does speed prior to switch predict whent hey switch?
+
+# -i) Regression
+mlreg <- lme( I(position_of_switch) ~ I(computer_avg_speed_before_switch_z),
+             data = masterDataExclusions_all_switchers,
+             random=~1|computer_id)
+summary(mlreg)
+
+#Wow! Foor every standard deviation increase in speed, the monitors will let the mover complete roughly 30 checkpoints (27)! That's around a quarter of the maze!
+
+# - ii) Graph
+plot(position_of_switch ~ computer_avg_speed_before_switch_z, data = masterDataExclusions_all_switchers,
+     ylab = "Position of switch (checkpoint)", xlab = ("Avg Mover speed before switch (z)"))
+abline(I(lm(position_of_switch ~ computer_avg_speed_before_switch_z, data = masterDataExclusions_all_switchers)))
+
+# Ok - so it really looks like that one's speed prior to the switch predicts when monitor would switch. In other words, the faster the mover is, the more of the maze the monitor will let them complete.
+
+
+
+# -- b) Is speed prior to switch a good metric?
+
+
+# - i) Regression: Does speed BEFORE the switch predict how good a mover is? Use MOVER COMPLETION TIME
+mlreg <- lme( I(computer_solo_time/100) ~ I(computer_avg_speed_before_switch_z),
+              data = masterDataExclusions_all_switchers,
+              random=~1|computer_id)
+summary(mlreg)
+
+#NO!!!! Completely insignificant (p=.39)! The speed prior to a switch does NOT PREDICT the computer's completion timie!
+
+# - ii) Regression II: Does speed BEFORE the switch predict how good a mover is? Use MOVER COMPLETION TIME
+mlreg <- lme( I(computer_overall_speed) ~ I(computer_avg_speed_before_switch_z),
+              data = masterDataExclusions_all_switchers,
+              random=~1|computer_id)
+summary(mlreg)
+
+#NO!!!! Insignificant (p=.14)! The speed prior to the switch does NOT predict OVERALL SPEED!!!!
+
+# - iii) Plots
+par(mfrow=c(1,2))
+plot(I(computer_solo_time/100) ~ I(computer_avg_speed_before_switch_z), data = masterDataExclusions_all_switchers,
+     ylab = "Computer Solo Time (s)", xlab = "Computer Avg Speed before switch (z)")
+plot(I(computer_overall_speed) ~ I(computer_avg_speed_before_switch_z), data = masterDataExclusions_all_switchers,
+     ylab = "Overall Avg Speed (checkpoints/second)", xlab = "Computer avg speed before switch (z)")
+par(mfrow=c(1,1))
+
+mlreg <- lme(I(computer_total_reset_counter) ~ I(game_mode == 2), data = masterDataExclusions_all_switchers, 
+             random=~1|computer_id)
+summary(mlreg)
+
+
+# Great! So we know the following: (1) Switchers rely on their partner's speed to determine wehther they should switch, but (2) this is a bad metric because your speed before the switch (i.e. like 25-30s in) does NOT predict how well you'll do afterwards!
+
+
+# --- C) Does this mean that the computer improves way more than the human?
+
+# - i) Significance testing: t-test with improvement indexes
+holder_monitor <- data.frame("Improvement Index" = masterDataExclusions_all_switchers$improvement_index,
+                             "Condition" = "Monitor")
+holder_mover <-  data.frame("Improvement Index" =  masterDataExclusions_all_switchers$computer_post_switch_improvement_index, "Condition" = "Mover")
+holder_final <- rbind(holder_monitor, holder_mover)
+
+t.test(holder_final$Improvement.Index ~ as.factor(holder_final$Condition))
+
+#YES!!! If the mover would've allowed the computer to continue, then the computer would've improved MUCH MORE than the monitor!
+
+# - ii) Graphs
+plot(improvement_index ~ computer_post_switch_improvement_index, data = masterDataExclusions_all_switchers,
+     xlim = c(-.005, .015), ylim = c(-.005, .015), ylab = "Improvement Index (Monitor)",
+     xlab = "Post-Switch Improvement Index (mover)", main = "Who improved more?")
+abline(a = 0, b = 1)
+
+computer_improvement_over_human <- masterDataExclusions_all_switchers$computer_post_switch_improvement_index - masterDataExclusions_all_switchers$improvement_index
+
+hist(computer_improvement_over_human)
+
 
 
 ## 2) Why cuases someone to press the "switch" button? For ALL switchers

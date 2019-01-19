@@ -1,6 +1,7 @@
 #install.packages("nlme")
 
 library(ggplot2) #beautiful plots
+library(Hmisc) # beautiful plots supplement
 library(nlme) #mixed linear effects
 
 #************************************************************
@@ -833,7 +834,7 @@ abline(a = 0, b = 1)
 
 # --- 0) Data Preperation
 
-# -- A) Function that grabs average speeds
+# -- A) Function that calculates & grabs average speeds from computer's speed string
 
 avg_speed_vector_grabber <- function(requested_time_seconds, non_switcher_mode){
   #Initialize dataset
@@ -862,16 +863,69 @@ for(counter in c(1:nrow(dataset))){ #Get every single mover's speed string
       average_speed <- sum_of_speeds/(requested_time_seconds/100)
       break;      
     }  
-
   }#end of for(stamp_counter)
+  
+  if(average_speed == -1) #if the computer completed the maze before the requested time (i.e. finished in 45s)
+    average_speed <- dataset$computer_overall_speed[counter] #Just use overall speed
+  
   avg_speed_storage_vector[counter] <- average_speed
 }#end of for(masterDataExclusions)
   return(avg_speed_storage_vector)
 }
 
 
-avg_speed_vector_grabber(10, FALSE)[1]
-View(masterDataExclusions_all_switchers)
+# -- B) First 10 seconds average speed: any diff between switchers & non switchers?
+
+# - i) Create speed metrics
+#10s average
+masterDataExclusions_all_switchers$computer_10s_average_speed <- avg_speed_vector_grabber(10, FALSE)
+masterDataExclusions_non_switchers$computer_10s_average_speed <- avg_speed_vector_grabber(10, TRUE)
+#30s average
+masterDataExclusions_all_switchers$computer_30s_average_speed <- avg_speed_vector_grabber(30, FALSE)
+masterDataExclusions_non_switchers$computer_30s_average_speed <- avg_speed_vector_grabber(30, TRUE)
+#60s average
+masterDataExclusions_all_switchers$computer_60s_average_speed <- avg_speed_vector_grabber(60, FALSE)
+masterDataExclusions_non_switchers$computer_60s_average_speed <- avg_speed_vector_grabber(60, TRUE)
+
+View(masterDataExclusions_all_switchers$computer_60s_average_speed)
+
+# - ii) Create holders: 10s
+holder_1 <- data.frame("Time Window" = "10s", "Status" = "Switched", "Average_Speed" = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$computer_elapsed_time <= 1000,]$computer_10s_average_speed) 
+holder_2 <- data.frame("Time Window" = "10s", "Status" = "To Switch", "Average_Speed" = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$computer_elapsed_time > 1000,]$computer_10s_average_speed) 
+holder_3 <- data.frame("Time Window" = "10s", "Status" = "Non Swicher", "Average_Speed" = masterDataExclusions_non_switchers$computer_10s_average_speed) 
+holder_10s <- rbind(holder_1, rbind(holder_2, holder_3))
+
+# - iii) Create holders: 30s
+holder_1 <- data.frame("Time Window" = "30s", "Status" = "Switched", "Average_Speed" = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$computer_elapsed_time <= 3000,]$computer_30s_average_speed) 
+holder_2 <- data.frame("Time Window" = "30s", "Status" = "To Switch", "Average_Speed" = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$computer_elapsed_time > 3000,]$computer_30s_average_speed) 
+holder_3 <- data.frame("Time Window" = "30s", "Status" = "Non Swicher", "Average_Speed" = masterDataExclusions_non_switchers$computer_30s_average_speed) 
+holder_30s <- rbind(holder_1, rbind(holder_2, holder_3))
+
+# - iv) Create holders: 60s
+holder_1 <- data.frame("Time Window" = "60s", "Status" = "Switched", "Average_Speed" = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$computer_elapsed_time <= 6000,]$computer_60s_average_speed) 
+holder_2 <- data.frame("Time Window" = "60s", "Status" = "To Switch", "Average_Speed" = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$computer_elapsed_time > 6000,]$computer_60s_average_speed) 
+holder_3 <- data.frame("Time Window" = "60s", "Status" = "Non Swicher", "Average_Speed" = masterDataExclusions_non_switchers$computer_60s_average_speed) 
+holder_60s <- rbind(holder_1, rbind(holder_2, holder_3))
+
+# - v) Create final holder
+holder_final <- rbind(holder_10s, rbind(holder_30s, holder_60s))
+
+
+# - vi) Time to finally plot...
+holder_final$Average_Speed
+
+
+ggplot(holder_final, aes(x = Time.Window, y = Average_Speed, fill = Status)) +
+  geom_hline(yintercept = c(0,0,0), linetype = "dashed", color = c("blue","red", "green")) +
+  stat_summary(fun.data = "mean_cl_boot", aes(color = Status), position = position_dodge(width = .25)) +
+  ggtitle("Speeds by Time Window with 95% CIs")
+
+
+ggplot(holder_final, aes(x = Status, y = Average_Speed))  +
+  stat_summary(fun.data = "mean_cl_boot", position = position_dodge(width = .25)) +
+  ggtitle("final speed by item with 95% CIs")
+
+
 
 head(avg_speed_vector_grabber(10))
 View(masterDataExclusions_non_switchers)
@@ -885,9 +939,9 @@ View(masterDataExclusions_non_switchers)
 
 
 
-#*******************************************************************************************************************
+#*****************************************************************************************************************
 #                                            Qualtrics Data
-#*******************************************************************************************************************
+#*****************************************************************************************************************
 
 
 #************************************************************

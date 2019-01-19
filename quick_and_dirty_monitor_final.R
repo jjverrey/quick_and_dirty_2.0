@@ -712,8 +712,7 @@ mlreg <- lme(I(effects_of_switch/100) ~ timing_of_switch_mover, data = test,
 summary(mlreg)
 
 # - ii) LME - Checkpoint
-mlreg <- lme(I(effects_of_switch/100) ~ position_of_switch, data = test, 
-             random=~1|computer_id)
+mlreg <- lme(I(effects_of_switch/100) ~ position_of_switch, data = test, random=~1|computer_id)
 summary(mlreg)
 
 #Both insignificant
@@ -727,33 +726,49 @@ rm(test)
 
 
 #*****************************************************************************************************
-#       Analysis IV: How do switchers determine when to switch? Is it even a good metric?
+#       Analysis IV: How do switchers determine WHEN to switch? Is it even a good metric?
 #*****************************************************************************************************
 
 # --- 1) What do monitors rely on when they decide whether they should switch?
 
 # -- A) Does speed prior to switch predict whent hey switch?
 
-#
-
 # -i) Regression
-mlreg <- lm( I(position_of_switch) ~ I(computer_avg_speed_before_switch_z),
-             data = masterDataExclusions_all_switchers)
+mlreg <- lme( I(position_of_switch) ~ I(computer_avg_speed_before_switch * 1000),
+             data = masterDataExclusions_all_switchers,  random=~1|computer_id)
 summary(mlreg)
 
-#Wow! Foor every standard deviation increase in speed, the monitors will let the mover complete roughly 30 checkpoints (27)! That's around a quarter of the maze!
+#Wow! For every one unit increase in speed, the monitor will let the mover go an additional 5 checkpoints.
 
 # - ii) Graph
-plot(position_of_switch ~ computer_avg_speed_before_switch_z, data = masterDataExclusions_all_switchers,
-     ylab = "Position of switch (checkpoint)", xlab = ("Avg Mover speed before switch (z)"),
+plot(position_of_switch ~ I(computer_avg_speed_before_switch * 1000), data = masterDataExclusions_all_switchers,
+     ylab = "Position of switch (checkpoint)", xlab = ("Avg Mover speed before switch (unit)"),
      main = "How does the mover's speed affect when the switch occurs?")
-abline(I(lm(position_of_switch ~ computer_avg_speed_before_switch_z, data = masterDataExclusions_all_switchers)))
-
+reg <- lm(position_of_switch ~ I(computer_avg_speed_before_switch * 1000), data = masterDataExclusions_all_switchers)
+abline(reg)
 # Ok - so it really looks like that one's speed prior to the switch predicts when monitor would switch. In other words, the faster the mover is, the more of the maze the monitor will let them complete.
 
 
-# -- b) Is speed prior to switch a good metric?
+# - iii) Summary of regression
+summary(reg)
+#Ok - it explains 32% of the variance as to what causes monitors wait longer on their mover.
 
+
+# - iv) Let's try incorperating reset counter into the equation
+
+#Raw regression...
+reg <- lm(position_of_switch ~ I(computer_avg_speed_before_switch * 1000) + computer_reset_counter_at_time_of_switch, data = masterDataExclusions_all_switchers) #random=~1|computer_id
+summary(reg)
+#Ok... wall rams increase the amount of checkpoitns someone completes by 11? The adjusted r^2 jumps up fro 32% to 60%.
+
+#Graphs...
+plot(position_of_switch ~ computer_reset_counter_at_time_of_switch, data = masterDataExclusions_all_switchers)
+
+#How counterintuitive. Maybe I should just disregard this?
+
+
+
+# -- b) Is speed prior to switch a good metric?
 
 # - i) Regression: Does speed BEFORE the switch predict how good a mover is? Use MOVER COMPLETION TIME
 mlreg <- lme( I(computer_solo_time/100) ~ I(computer_avg_speed_before_switch_z),
@@ -810,6 +825,59 @@ abline(a = 0, b = 1)
 
 
 
+
+#*****************************************************************************************************
+#       Analysis V: What do monitors use to determines IF they should switch? Is it even a good metric?
+#*****************************************************************************************************
+
+
+# --- 0) Data Preperation
+
+# -- A) Function that grabs average speeds
+
+avg_speed_vector_grabber <- function(requested_time_seconds, non_switcher_mode){
+  #Initialize dataset
+  if(non_switcher_mode)
+    dataset <- masterDataExclusions_non_switchers
+  else
+    dataset <- masterDataExclusions_all_switchers
+  
+  requested_time_seconds <- requested_time_seconds * 100;
+  avg_speed_storage_vector <- 0 #stores ALL the average speeds for the entire non_switchers dataset 
+for(counter in c(1:nrow(dataset))){ #Get every single mover's speed string
+  speed_string <- toString(dataset$computer_speed_string[counter])
+  speed_string_stamps <- unlist(strsplit(speed_string, "\\W;")) #Split progress string by character ';'
+  average_speed <- -1 
+  sum_of_speeds <- 0.00 #Sums up all the speeds so an average can be computed
+  
+  for(stamp_counter in c(1:length(speed_string_stamps))){ #Loops through every stamp in speed string
+    current_stamp <- unlist(strsplit(speed_string_stamps[stamp_counter], ",")) #Breaks the stamp into 2 parts
+    
+    if(stamp_counter == 1) #removes the ';' that comes before the first stamp
+      current_stamp[1] <- substr(current_stamp[1], 2, nchar(current_stamp[1])) 
+      
+    if(as.numeric(current_stamp[1]) <= requested_time_seconds){ #if the current time < requested time
+      sum_of_speeds <- sum_of_speeds + as.double(current_stamp[2]) # Add the speed at X second to the sum
+    }else{ #If the timing is > the requested team, then no more speed values are needed.
+      average_speed <- sum_of_speeds/(requested_time_seconds/100)
+      break;      
+    }  
+
+  }#end of for(stamp_counter)
+  avg_speed_storage_vector[counter] <- average_speed
+}#end of for(masterDataExclusions)
+  return(avg_speed_storage_vector)
+}
+
+
+avg_speed_vector_grabber(10, FALSE)[1]
+View(masterDataExclusions_all_switchers)
+
+head(avg_speed_vector_grabber(10))
+View(masterDataExclusions_non_switchers)
+
+
+
 # TODO - Figure out WHAT FACTORS CAUSE PEOPLE TO SWITCH (If they switch) vs. when they swich
 # To do this, take the first 30 seconds of mover data an dlook at something like wall rams or average speed,
 # and compare that to the first 30 seconds of the switchers data, then see if they differ from eachother.
@@ -860,6 +928,14 @@ masterDataExclusions$switch_thinking_q[masterDataExclusions$switch_thinking == "
 masterDataExclusions$switch_thinking_q[masterDataExclusions$switch_thinking == "Most of the time"] <- 3
 masterDataExclusions$switch_thinking_q[masterDataExclusions$switch_thinking == "The entire time"] <- 4
 
+#Do it also for the masterDataExclusions_all_switchers dataset (it has positions of switch)
+masterDataExclusions_all_switchers$switch_thinking_q <- NA
+masterDataExclusions_all_switchers$switch_thinking_q[masterDataExclusions_all_switchers$switch_thinking == "Never"] <- 0
+masterDataExclusions_all_switchers$switch_thinking_q[masterDataExclusions_all_switchers$switch_thinking == "Some of the time"] <- 1
+masterDataExclusions_all_switchers$switch_thinking_q[masterDataExclusions_all_switchers$switch_thinking == "About half the time"] <- 2
+masterDataExclusions_all_switchers$switch_thinking_q[masterDataExclusions_all_switchers$switch_thinking == "Most of the time"] <- 3
+masterDataExclusions_all_switchers$switch_thinking_q[masterDataExclusions_all_switchers$switch_thinking == "The entire time"] <- 4
+
 
 #better_on_own: How much better would you be on your own (METRIC)? Absolute
 masterDataExclusions$effect_of_having_partner <- NA
@@ -882,8 +958,6 @@ masterDataExclusions$myself_average_comparison_percent <-
 #Create new datasets to reflect new variables, and remove the old ones
 switchers <- masterDataExclusions[masterDataExclusions$game_mode == 3,]
 non_switchers <- masterDataExclusions[masterDataExclusions$game_mode == 2,]
-rm(masterDataExclusions_all_switchers); rm(masterDataExclusions_non_switchers);
-
 
 
 #************************************************************
@@ -894,7 +968,7 @@ rm(masterDataExclusions_all_switchers); rm(masterDataExclusions_non_switchers);
 
 # i) Graph
 
-par(mfrow = c(1,3))
+par(mfrow = c(1,2))
 table <- round(prop.table(table(non_switchers$switch_goodbad)), 2)
 plot <- barplot(table, main = "Non Switchers (n=53)", ylab = "Proportion", xlab = "Should we have switched?",
                 names.arg = c("No", "Yes"))
@@ -902,11 +976,6 @@ text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
 plot
 table <- round(prop.table(table(switchers$switch_goodbad)), 2)
 plot <- barplot(table, main = "Switchers (n=91)", ylab = "Proportion", xlab = "Should we have switched?", 
-                names.arg = c("No", "Yes"))
-text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
-plot
-table <- round(prop.table(table(moverData$switch_goodbad)), 2)
-plot <- barplot(table, main = "Movers (n=49)", ylab = "Proportion", xlab = "Should we have switched?", 
                 names.arg = c("No", "Yes"))
 text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
 plot
@@ -918,6 +987,8 @@ par(mfrow=c(1,1))
 
 
 # --- 2) Do the movers who are switched on want to be switched on?
+
+# -- A) Did mover want to switch vs. were they actually switched on
 
 par(mfrow=c(1,2))
 table<-round(prop.table(
@@ -937,8 +1008,7 @@ par(mfrow=c(1,1))
 #Wow. I guess it doesn't matter whether or not you want to be switched on: regardless of what you think, you'll be switched on 70% of the itme
 
 
-# ii) Among ALL movers, how many are happy with the monitor's decision?
-
+# -- B) Combine previous datasets together: how many movers were satisfied vs. dissatisfied
 
 t1 <- table(masterDataExclusions[masterDataExclusions$computer_switch_goodbad == "Partner wanted switch",]$switch)
 names(t1) <- c("Dissatisfied", "Satisfied")
@@ -955,12 +1025,12 @@ plot
 
 #Wow - so it's roughly a 50/50 split in that half are dissatisfied and the other half are satisfied
 
-# iii) Different view of switching
+# -- C) Different way of showing satisfaction 
 
 ggplot(masterDataExclusions, aes(x = computer_name, y = switch, color = effects_of_switch > 0)) + geom_point(position = position_jitter(w = 0, h = .1)) + facet_wrap(~computer_switch_goodbad, scales="free") + scale_color_manual(values=c("green","red")) + labs(colour = "Switching Hurt Performance?") + xlab("Partner Name") + ylab("Did the switch happen?")
 
 
-# --- 2) What motivates switchers/movers into wanting/not wanting to switch? Is it objective skill?
+# --- 3) What motivates switchers/movers into wanting/not wanting to switch? Is it objective skill?
 
 # - i) Graphs
 
@@ -979,21 +1049,33 @@ par(mfrow=c(1,1))
 
 
 
-# --- 3) Are switchers perceptions of the switch accurate?
+# --- 4) Are switchers perceptions of the switch accurate?
 
-plot(effect_of_having_partner ~ I(effects_of_switch/100), switchers, 
-     xlab = "Effect of switch (s): how much my switch HURT partner", 
-     ylab = "Perception of how much partner hurt me (s)",
-     main = "Are people good judges of the impact of switch?",
-     xlim = c(-150,150), ylim = c(-150, 150))
+# -- A) Given the objective impact of a switch, do people realize how much the switch helped/hurt them?
+
+plot(I(switch_impact * -1)  ~ I(effects_of_switch/100), data = switchers, 
+     main = "Are people good judges of switch?", ylab = "How much do you think the switch hurt you? (5 = alot)",
+     xlab = "How much did the switch OBJECTIVELY hurt you (s)")
 abline(v = 0, col = "black")
 abline(h = 0, col = "black")
 
-# effect_of_having_partner = your_completion_time - your_completion_time_without_partner
-# 60s - 100 s = -40s; not having a partner would improve your performance by 40s
-# 120s - 60s = 60s; having a partner hurt you by 60s
+# Wow! The distribution looks SUPER normal! Regardless, it looks like people are pretty bad judges of their own performance, althouth the sanity quadrants (i.e. quadrant 1 & 3) have a bit more data than the insanity one (2 & 4)
 
 
+# -- B) How many switchers are accurate judges vs. inaccurate judges?
+
+# - i) Variable creation
+switchers$good_performance_judge <- NA
+switchers$good_performance_judge <- switchers$switch_impact * switchers$effects_of_switch > 0
+
+# - ii) Plot it
+table <- round(prop.table(table(switchers$good_performance_judge)), 2)
+plot <- barplot(table, main = "Switchers", ylab = "Proportion", xlab = "Are switchers good performance judges?",
+                names.arg = c("no", "yes"))
+text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
+plot
+
+# Wow! The distribution looks SUPER normal! Regardless, it looks like people are pretty bad judges of their own performance, althouth the sanity quadrants (i.e. quadrant 1 & 3) have a bit more data than the insanity one (2 & 4)
 
 
 
@@ -1012,7 +1094,7 @@ boxplot(Partner_Likeability ~ I(game_mode == 2), data = masterDataExclusions,
 table <- round(prop.table(table(switchers$Partner_Likeability)), 2)
 plot <- barplot(table, main = "Switchers", ylab = "Proportion", xlab = "Partner Likeability")
 text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
-
+plot
 table <- round(prop.table(table(non_switchers$Partner_Likeability)), 2)
 plot <- barplot(table, main = "Non Switchers", ylab = "Proportion", xlab = "Partner Likeability")
 text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
@@ -1049,7 +1131,100 @@ summary(reg)
 
 
 #************************************************************
-#Analysis 3: Are people accurate judges of their performance?
+#Analysis 3: Thinking about switch
 #************************************************************
 
-#
+# --- 1) Does thinking about the switch affect whether someone switches?
+par(mfrow=c(1,3))
+boxplot(switch_thinking_q ~ (game_mode == 2), data = masterDataExclusions, 
+        ylab = "Switch Thinking Index", names = c("Switchers", "Non Switchers"), 
+        main = "Do switchers vs. non switchers think differently about switch?")
+table<-round(prop.table(table(non_switchers$switch_thinking_q)),2)
+plot <- barplot(table, main = "Non-Switchers", xlab = "How often did you think of switching?" 
+               , ylab = "Proportion", names.arg = c("Never", "Some", "Half", "Most", "Entire"))
+text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
+plot
+table<-round(prop.table(table(switchers$switch_thinking_q)),2)
+plot <- barplot(table, main = "Switchers", xlab = "How often did you think of switching?" 
+                , ylab = "Proportion", names.arg = c("Never", "Some", "Half", "Most", "Entire"))
+text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
+plot
+par(mfrow=c(1,1))
+
+# Ok - so it looks like switchers thought more about switching than non-switchers; perhaps switching was a stressful decision? Switchers also have a more extreme variance with their response, while non-switchers pretty much agree that they only thougth of their partner some of the time.
+
+
+
+# --- 2) Does thinking about the switch affect whether WHEN someone switches? (Switchers only)
+boxplot(position_of_switch ~ switch_thinking_q, masterDataExclusions_all_switchers, 
+        ylab = "Position of switch (Checkpoint)", xlab = "Switch thinking",
+        names =  c("Never", "Some", "Half", "Most", "Entire"), main = "Switch thinking affect when one switches?")
+
+#Yes! It looks like it does: the more someone thinks about a switch, the more hesitant they'll be in switching, and the longer they'll waitQ!
+
+
+# --- 3) Does thinking about the switch affect likeability? For ALL MONITORS
+boxplot(Partner_Likeability ~ switch_thinking_q, data = masterDataExclusions, 
+        ylab = "Position of switch (Checkpoint)", xlab = "Switch thinking",
+        names =  c("Never", "Some", "Half", "Most", "Entire"), main = "Switch thinking affect when one switches?")
+
+#Nope: thinking about the switch does not affect how much you liek your partner
+
+
+
+
+#************************************************************
+#Analysis 4: Gender Effects
+#************************************************************
+
+# -- 0) Variable creation
+women <- masterDataExclusions[masterDataExclusions$gender == "Female",]
+men <- masterDataExclusions[masterDataExclusions$gender == "Male",]
+
+nrow(women) - nrow(men)
+
+#Scewed towards men: there's 85 men and 59 women, leading to 26 more males than females.
+
+# -- 1) Does gender play a role in the decision to initiate a switch?
+par(mfrow=c(1,2))
+table<-round(prop.table(table(men$game_mode == 2)),2)
+plot <- barplot(table, main = "Men", xlab = "Are you a switcher?", ylim=c(0,.7)
+                , ylab = "Proportion", names.arg = c("Non Switchers", "Switchers"))
+text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
+plot
+table<-round(prop.table(table(women$game_mode == 2)),2)
+plot <- barplot(table, main = "Women", xlab = "Are you a switcher?", ylim=c(0,.7) 
+                , ylab = "Proportion", names.arg = c("Non Switchers", "Switchers"))
+text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
+plot
+par(mfrow=c(1,1))
+
+
+#Not really - both mena nd women switch at a roughy equal rates. Although roughly 9% more men chose not to switch, which is kind of counteirntuitive
+
+
+# -- 2) Does gender play a role in the decision WHEN to switch?
+boxplot(position_of_switch ~ gender, masterDataExclusions_all_switchers, main = "Gender vs. position of switch",
+        xlab = "Gender", ylab = "POsition of switch (checkpoint)")
+
+#Not really... both genders swithc at a roughly equal time. The t-test (code not shown) is also insignificant
+
+
+# -- 3) Does gender play a role in likeability?
+par(mfrow=c(1,2))
+boxplot(Partner_Likeability ~ I(game_mode == 2), data = women, names = c("Non Switchers", "Switchers"), 
+        main = "Women", ylab = "Partner Likeability Index")
+boxplot(Partner_Likeability ~ I(game_mode == 2), data = men, names = c("Non Switchers", "Switchers"), 
+        main = "Men", ylab = "Partner Likeability Index")
+
+boxplot(women$Partner_Likeability, main = "Women", xlab - "Partner Likeability", ylab = "Switcher?")
+par(mfrow=c(1,1))
+
+# Doesn't look like it again: both men and women like people the same amount, regardless of whether or not they've switched.
+
+
+# I gave up on this gender ggplot
+ggplot(masterDataExclusions, aes(x=as.factor(game_mode), fill = gender)) + 
+  geom_bar(stat = "count", position=position_dodge(), aes(color = gender, y = (..count..)/sum(..count..))) +
+  ylab("Percent") + xlab("") + scale_x_discrete(labels= c("Non-Switcher", "Switcher")) + 
+  scale_fill_manual("gender", values=c("Female" = "pink", "Male" = "blue"))

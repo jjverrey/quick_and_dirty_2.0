@@ -182,27 +182,16 @@ rm(stamp_counter)
 # -- a) Movers vs. Monitors
 
 # - i) Graphs
-par(mfrow = c(2,2))
+holder <- data.frame("Group" = "Represented Mover", "Completion Time" = I(masterDataExclusions$computer_solo_time/100))
+holder <- rbind(holder, data.frame("Group" = "Monitor", "Completion Time" = masterDataExclusions$completion_time))
 
-#Movers (those paired up with a partner)
-boxplot(masterDataExclusions$computer_solo_time/100, main = "Dist of Mover Completion Time",
-        ylab = "Completion Time (s)")
-hist(masterDataExclusions$computer_solo_time/100, main = "Freq of Mover Completion Time",
-     xlim=c(0,200), xlab = "Completion Time (s)")
-abline(v=mean(masterDataExclusions$computer_solo_time/100), col="Red")
+ggplot(holder, aes(x = Group, y = I(Completion.Time))) +
+  stat_summary(fun.data = "mean_cl_boot", position = position_dodge(width = .25)) +
+  geom_hline(yintercept = mean(holder$Completion.Time), color = c("grey")) + 
+  ggtitle("Mean Completion Times with 95% CIs") +
+  ylab("Completion Time (s)") + xlab("Condition") 
 
-#Monitors
-boxplot(masterDataExclusions$completion_time, main = "Dist of monitor Completion Time",
-        ylab = "Completion Time (s)")
-hist(masterDataExclusions$completion_time, main = "Freq of monitor completion Time",
-     xlim=c(0,200), xlab = "Completion Time (s)")
-abline(v=mean(masterDataExclusions$completion_time), col = "Red")
-
-par(mfrow = c(1,1))
-
-
-#How intruiging! Both graphs looks extremely similar, both in terms of mean and in terms of distributions. Switching must not really have much of an impac ton performance. Let's take a closer look at the mean.
-
+#No sig difference apparent
 
 # - ii) Diff of Means
 mover_mean <- mean(masterDataExclusions$computer_solo_time/100)
@@ -216,45 +205,37 @@ rm(monitor_mean)
 
 
 # - iii) T Test just to make sure there's no significance. Completoin Time (s)
-holder_monitor <- data.frame("Completion Time " = masterDataExclusions$completion_time,
-                             "Condition" = "monitor")
-holder_mover <- data.frame("Completion Time " = masterDataExclusions$computer_solo_time/100,
-                           "Condition" = "mover")
-holder_final <- rbind(holder_monitor, holder_mover)
-
-t.test(holder_final$Completion.Time. ~ as.factor(holder_final$Condition))
+t.test(holder$Completion.Time ~ as.factor(holder$Group))
 # No significant difference. Let's look at Z scores to get a better understanding.
 
 
 # - iv) T Test just to make sure there's no significance. Completoin Time (Z scores)
 
-holder_final$completion_time_z <- (holder_final$Completion.Time. - mean(holder_final$Completion.Time.))/sd(holder_final$Completion.Time.)
+holder$completion_time_z <- (holder$Completion.Time - mean(holder$Completion.Time))/sd(holder$Completion.Time)
+t.test(holder$completion_time_z ~ as.factor(holder$Group))
 
-t.test(holder_final$completion_time_z ~ as.factor(holder_final$Condition))
-
-rm(holder_monitor)
-rm(holder_mover)
-rm(holder_final)
+rm(holder)
 
 # Yep - no statistical signifiance in z scores either
+
 
 
 # -- b) How does the performance of switchers compare to non-switchers?
 
 # - i) Plots
-par(mfrow=c(2,2))
-barplot(prop.table(table(masterDataExclusions$switch)), ylab = "Proportion", main = "Did the switch happen?")
-boxplot(masterDataExclusions$completion_time ~ masterDataExclusions$switch, main = "Switch vs. no-switch distributions", ylab = "Completion time (s)")
+table <- round(prop.table(table(masterDataExclusions$switch)), 2)
+plot <- barplot(table, main = "Switchers vs. Non Switchers", ylab = "Proportion", xlab = "Did the switch happen?",
+                names.arg = c("No", "Yes"))
+text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
+plot
 
-hist(masterDataExclusions_non_switchers$completion_time, 
-     main = "Freq of non-switcher completion Time", xlim=c(0,200), xlab = "Completion Time (s)")
-abline(v=mean(masterDataExclusions_non_switchers$completion_time), col = "Red")
 
-hist(masterDataExclusions_all_switchers$completion_time, 
-     main = "Freq of switcher completion Time", xlim=c(0,200), xlab = "Completion Time (s)")
-abline(v=mean(masterDataExclusions_all_switchers$completion_time), col = "Red")
-
-par(mfrow=c(1,1))
+ggplot(masterDataExclusions, aes(x = switch, y = I(completion_time))) +
+  stat_summary(fun.data = "mean_cl_boot", position = position_dodge(width = .25)) +
+  geom_hline(yintercept = mean(masterDataExclusions$completion_time), color = c("grey")) + 
+  ggtitle("Switchers vs. Non Switcher Completion Times with 95% CIs") +
+  ylab("Completion Time (s)") + xlab("Condition") +
+  scale_x_discrete(labels= c("Non Switchers", "Switcher"))
 
 # Ok - most people (~60%) switched, as confirmed by the quantatative data.
 
@@ -262,8 +243,8 @@ par(mfrow=c(1,1))
 
 
 # - ii) Diff of means - completoin time (seconds)
-switch_mean <- round(mean(masterDataExclusions_all_switchers$completion_time),2)
-no_switchmean <- round(mean(masterDataExclusions_non_switchers$completion_time),2)
+switch_mean <- round(mean(masterDataExclusions_all_switchers$completion_time),3)
+no_switchmean <- round(mean(masterDataExclusions_non_switchers$completion_time),3)
 
 paste("Switch Mean =", switch_mean, "No Switch Mean =", no_switchmean, 
       "Diff of means = ", I(switch_mean - no_switchmean) ,sep = " ")
@@ -299,6 +280,7 @@ mlreg = lme(monitor_completion_time_z ~ switch, data = masterDataExclusions, ran
 summary(mlreg)
 
 
+
 # -- C) Effect of the swtich on the mover's performance.
 
 # Note - we use absolute value because we care abotu the magnitude of the effect, not the direction of the effect
@@ -308,12 +290,12 @@ summary(mlreg)
 # Effects of switch on intiial movers performance
 par(mfrow=c(1,2))
 hist(masterDataExclusions_all_switchers$effects_of_switch/100,
-     main = "Effect of switch histogram Seconds", breaks = 100,
+     main = "Effect of switch histogram Seconds", breaks = 20,
      xlab = "Effect of Switch (s)")
 abline(v=mean(masterDataExclusions_all_switchers$effects_of_switch/100), col = "red")
 
 hist(masterDataExclusions_all_switchers$effects_of_switch_z,
-     main = "Effect of switch histogram Zs", breaks = 100,
+     main = "Effect of switch histogram Zs", breaks = 20,
      xlab = "Effect of Switch (z)")
 abline(v=mean(masterDataExclusions_all_switchers$effects_of_switch_z), col = "red")
 par(mfrow=c(1,1))
@@ -338,33 +320,14 @@ shapiro.test(masterDataExclusions_all_switchers$effects_of_switch_z)
 
 # In other words, is there really a difference between those who are switched on vs. those who are not?
 
-# - i) Graphs
+# - i) Graph
 
-par(mfrow=c(2,2))
-#ALL Switchers - intiial mover performance
-hist(masterDataExclusions_all_switchers$computer_solo_time/100, 
-     main = "Mover Performance, ALL Sw", xlim=c(0,200), 
-     xlab = "Completion Time (s)")
-abline(v=mean(masterDataExclusions_all_switchers$computer_solo_time/100), col = "Red")
-
-# ALL siwtchers - inital mover performance Zs
-hist(masterDataExclusions_all_switchers$computer_solo_time_z, 
-     main = "Mover Performance, ALL Sw", 
-     xlab = "Completion Time (z)")
-abline(v=mean(masterDataExclusions_all_switchers$computer_solo_time_z), col = "Red")
-
-#Non Switchers - intiial mover performance
-hist(masterDataExclusions_non_switchers$computer_solo_time/100, 
-     main = "Mover Performance, Non Sw", xlim=c(0,200), 
-     xlab = "Completion Time (s)")
-abline(v=mean(masterDataExclusions_non_switchers$computer_solo_time/100), col = "Red")
-
-# Non siwtchers - inital mover performance Zs
-hist(masterDataExclusions_non_switchers$computer_solo_time_z, 
-     main = "Mover Performance, Non Sw", 
-     xlab = "Completion Time (z)")
-abline(v=mean(masterDataExclusions_non_switchers$computer_solo_time_z), col = "Red")
-par(mfrow=c(1,1))
+ggplot(masterDataExclusions, aes(x = switch, y = I(computer_solo_time/100))) +
+  stat_summary(fun.data = "mean_cl_boot", position = position_dodge(width = .25)) +
+  geom_hline(yintercept = mean(I(masterDataExclusions$computer_solo_time/100)), color = c("grey")) + 
+  ggtitle("Mean Mover Completion Times with 95% CIs") +
+  ylab("Mover Completion Time (s)") + xlab("Switch status") +
+  scale_x_discrete(labels= c("Non Switchers", "Switcher"))
 
 
 #Ok, so it looks like the movers of non switchers did noticeably better than the movers of switchers. Non switchers must choose not to switch on the really good people, or so the graphs suggest.
@@ -378,34 +341,36 @@ t.test(I(computer_solo_time/100) ~ as.factor(game_mode-2), data = masterDataExcl
 #initial mover time - Zs
 t.test(I(computer_solo_time_z) ~ as.factor(game_mode-2), data = masterDataExclusions)
 
-
 # Ok - movers who DON'T get switched on tend to have an average completion time of 88.6 seconds, which is around 13 seconds BETTER than the completion times of those who are switched on (101.8s). 
 # Z-scores are a similar conclusion: people who AREN'T switched on are 1/4th a standard deviation BETTER than those who are switched on (.23 sd)!
 
-# Take away: Movers who aren't switched on are only 1/4th a SD better than those who are switched on, which isn't that much. (i.e. the average mover who ISN'T switched on is only 8% worse than the average mover who is switched on)
+# Take away: Movers who aren't switched on are 1/4th a SD better than those who are switched on, which isn't that much. (i.e. the average mover who ISN'T switched on is only 8% worse than the average mover who is switched on)
 
 
 # - iii) Regression (to control for something)
-reg <- glm( (game_mode-2) ~ computer_solo_time_z, 
+
+reg <- glm((game_mode-2) ~ I(computer_solo_time/100), 
             data = masterDataExclusions, family = binomial(link='logit'))
 summary(reg)
 
 
-# I forgot what this controls for, but it holds the relationship. 
+# I forgot what this controls for, but it holds the relationship (p=.03): Switchers SWITCH on worth people. 
 
 
-# H-1: SUPPORTED (?) for Switchers vs. No Switchers: no switchers only refuse to switch on people marginally better than the average Joe, so they're basically switching on the same people.
-
-#Ok, so non switchers vs. switchers don't know who to switch on.if the incorrect switching hyptohosis is true for switchers, then we should expect people who switch to be hurting the mover's performane
+# H-1: Not Supported: Switchers switch on WORSE people than non-switchers
 
 
-# -- B) Incorrect switch hypothosis for SWITCHERS
+
+
+# -- B) Incorrect switch hypothosis for SWITCHERS.
+
+#In other words, even though switchers switch on WORSE movers, are they still switching on the right people?
 
 # - i) Graphs
 
 #Seconds
 plot(I(effects_of_switch/100) ~ I(computer_solo_time/100), data = masterDataExclusions_all_switchers, 
-     xlab = "Mover (computer) completion time WITHOUT switch (s)", ylab = "Effect of switch (s)",
+     xlab = "Mover completion time WITHOUT switch (s)", ylab = "Effect of switch (s)",
      main = "Effects of switch from monitor vs. Initial Mover completion time")
 abline(h = 0, col = "black")
 
@@ -415,12 +380,12 @@ reg_s <- lm(I(effects_of_switch/100) ~ I(computer_solo_time/100),
 abline(reg_s, col = "blue")
 
 #Plot average lines.
+#This is the mean of the movers who were switched on: Even though theyre switching on worse people, they're not switching on people bad enough
+abline(v = mean(masterDataExclusions_all_switchers$computer_solo_time/100), col = "pink")
 #This is the mean of ALL Movers, not just the movers who were switchd on
-abline(v = mean(masterDataExclusions$computer_solo_time/100), col = "pink") 
-#This is the mean of the movers who were switched on 
-abline(v = mean(masterDataExclusions_all_switchers$computer_solo_time/100), col = "red")
+abline(v = mean(masterDataExclusions$computer_solo_time/100), col = "red") 
 #This is the mean of the movers who were NOT switched on
-abline(v = mean(masterDataExclusions_non_switchers$computer_solo_time/100), col = "purple") 
+abline(v = 119.2, col = "purple") #.3 SDs
 
 # The graph shows the following: the WORSE an initial mover does overall, the BETTER the switch would be (i.e. the effects of switch are negative & make the team do better).
 
@@ -483,6 +448,43 @@ rm(reg_s)
 
 
 
+# -- C) Why is switching so costly? Why is it that, if you switch with the average participant
+  
+#Maybe it has to do with the imrpovment index: monitors usually don't improve as much as switchers
+
+# - i) Significance testing: t-test with improvement indexes
+holder_monitor <- data.frame("Improvement Index" = masterDataExclusions_all_switchers$improvement_index,
+                               "Condition" = "Monitor")
+holder_mover <-  data.frame("Improvement Index" =  masterDataExclusions_all_switchers$computer_post_switch_improvement_index, "Condition" = "Mover")
+holder_final <- rbind(holder_monitor, holder_mover)
+
+t.test(holder_final$Improvement.Index ~ as.factor(holder_final$Condition))
+
+#YES!!! If the mover would've allowed the computer to continue, then the computer would've improved MUCH MORE than the monitor! In other wrods, the computer improves by roughly 30% more than the monitor!
+
+# - ii) Graphs
+
+#Simplified Improvement Graph
+plot(improvement_index ~ computer_post_switch_improvement_index, data = masterDataExclusions_all_switchers,
+     xlim = c(-.005, .015), ylim = c(-.005, .015), ylab = "MONITOR post-switch improvmenet",
+     xlab = "MOVER post-switch improvement", main = "Who improved more?")
+abline(a = 0, b = 1)
+
+#GGplot improvement: Does the timing of thd switch affect imtprovement index?
+ggplot(masterDataExclusions_all_switchers, 
+       aes(x=computer_post_switch_improvement_index, y=improvement_index, color = position_of_switch)) + 
+  geom_point() + ylim(c(-.005,.015)) + xlim(c(-.005,.015)) + geom_abline(intercept = 0, slope = 1) +
+  ylab("Monitor Improvement Index after Switch") +
+  xlab("Mover Improvement Index after Switch") + 
+  scale_color_gradient2(low="red", mid = "purple",high="blue", midpoint = 50)
+
+
+#YES!! The computer alLMOST ALWAYS improves more, even visually.
+
+
+
+
+
 # --- 3) H-2 Testing: SKill Differences in SWITCHERS
 
 
@@ -505,7 +507,6 @@ summary(reg_z)
 
 
 # iii) Plots
-par(mfrow=c(1,2))
 plot(I(overall_avg_speed_z) ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers,
      ylab = "Overall Avg Speed (z)", xlab = "Effects of switch (s)", ylim = c(-5,5),
      main = "Overall Speed vs. Effect of Switch (s)")
@@ -514,24 +515,8 @@ abline(reg, col = "blue")
 abline(v = 0, col = "gray")
 abline(h = 0, col = "gray")
 
-plot(I(overall_avg_speed_z) ~ I(effects_of_switch_z), data = masterDataExclusions_all_switchers,
-     ylab = "Overall Avg Speed (z)", xlab = "Effects of switch (z)", ylim = c(-5,5),
-     main = "Overall Speed vs. Effect of Switch (z)")
-reg <- lm(I(overall_avg_speed_z) ~ I(effects_of_switch_z), data = masterDataExclusions_all_switchers)
-abline(reg, col = "blue")
-abline(v = 0, col = "gray")
-abline(h = 0, col = "gray")
-par(mfrow=c(1,1))
 
 #Ok -  so it looks like a slight decrease in speed leads to a a pretty severe PENTALTY when you're looking at the effect of switching. In other words, people who switched who really hurt performance tended to have worse speeds.
-
-# iv) Are the least skilled people also the same as those who don't knwo when to switch?
-reg <- lme(I(overall_avg_speed_z) ~ I(computer_solo_time_z), 
-             data = masterDataExclusions_all_switchers, random=~1|computer_id)
-summary(reg)
-
-#Wow! There's NO CORRELATION between those who are the least skilled vs. those who don't know when to switch! It seems that H-2 is also supported: people who's switch HURTS performance ten dto be LESS SKILLED, as evident by overall average speed
-
 
 # -- b) Improvment Index
 
@@ -540,8 +525,7 @@ reg_s <- lme(I(improvement_index) ~ I(effects_of_switch/100),
              data = masterDataExclusions_all_switchers, random=~1|computer_id)
 summary(reg_s)
 
-# No significant/meaningful difference in imrpovement index: people who were great at switching improved just as much as people who were bad at swiching
-
+# No significant/meaningful difference in imrpovement index: people who were great at switching improved just as much as people who were bad at swiching. Although this affect will PROBABLY become significant with more data
 
 
 # -- c) Reset Count (wall rams)
@@ -553,33 +537,32 @@ summary(reg_s)
 
 #Ok, for every second longer that someone hurts one's switch, they ram into the wall .078 more times
 
-# - ii) Raw results: seconds (effect of switchh
-reg_z <- lme(human_reset_counter ~ I(effects_of_switch_z), data = masterDataExclusions_all_switchers, 
-             random=~1|computer_id)
-summary(reg_z)
-
-#Very good - for every standard deviation WORSE a monitor makes a mover's eprformance, the monitor will ram into the wall 3.72 more times.
-
-
-# - iii) Plot
+# - ii) Plot
 plot(human_reset_counter ~ I(effects_of_switch/100), data = masterDataExclusions_all_switchers,
      ylab = "Monitor Wall Rams (# of rams)", xlab = "Effects of switch (s)", 
      main = "Wall Rams vs. Effects of Switch", ylim = c(0,15))
 abline(v = 0, col = "black")
 abline(h = mean(masterDataExclusions_all_switchers$human_reset_counter), col = "red")
 
-# No significant/meaningful difference in imrpovement index: people who were great at switching improved just as much as people who were bad at swiching
 
 
-# - iv) Are the people who ram into the most walls also the people who don't know when to switch?
-reg_s <- lme(human_reset_counter ~ I(computer_solo_time/100), data = masterDataExclusions_all_switchers, 
-             random=~1|computer_id)
-summary(reg_s)
-
-#No correlation again (p=.59). 
 
 
-### H-2: Supported. Monitors who make movers worse off are less skilled, as evident by overall average speed and wall rams, but NOT improvement (the learning metric)! Furthermore, this is NOT CORRELATED with mover skill (i.e. computer overall time), meaning the monitors who are bad at switching are also NOT those who are the least skilled
+# --- 4) Are the least skilled people also the same as those who don't knwo when to switch? 
+
+#In other words, is there an interaction?
+
+reg <- lm(I(effects_of_switch/100) ~ I(computer_solo_time/100) + overall_avg_speed_z + I(computer_solo_time/100):overall_avg_speed_z, 
+           data = masterDataExclusions_all_switchers)#, random=~1|computer_id)
+summary(reg)
+
+#TODO - Ask David/Adam about that...
+
+
+
+
+
+
 
 
 
@@ -587,7 +570,6 @@ summary(reg_s)
 #       Analysis III: Does waiting have anything to do with effectiveness of switch? 
 #*****************************************************************************************************
 
-#I don't think H-1 and H-2 are mutually exclusive: maybe there's something about a switching strategy that's leading the monitor to overall becoming less skilled. Let's find out...
 
 ### H-1) Early Switch Hyptohosis: Maybe bad switchers switch too early, and that's why they don't get an accurate measure of performance?
 
@@ -676,7 +658,8 @@ abline(v = mean(edge_data$position_of_switch), col = "Red")
 abline(h = 0, col = "black")
 par(mfrow=c(1,1))
 
-# How fascinating! When we look at the % complete the intial mover is, NOW there seems to be a significant relationship: the longer one waits, the more likely he is to foul up the switch
+#looks like no correlation again
+
 
 # - ii) mixed linear reg - center
 mlreg <- lme(I(effects_of_switch/100) ~ position_of_switch, data = center_data, 
@@ -689,6 +672,7 @@ mlreg <- lme(I(effects_of_switch/100) ~ position_of_switch, data = edge_data,
 summary(mlreg)
 
 # Nope - this is insignificant again
+
 
 
 # -- D) Let's look at switchers who wait a while: give me a dataset of people who waited LONGER THAN THE MEAN!
@@ -726,6 +710,7 @@ rm(test)
 
 
 
+
 #*****************************************************************************************************
 #       Analysis IV: How do switchers determine WHEN to switch? Is it even a good metric?
 #*****************************************************************************************************
@@ -749,10 +734,10 @@ reg <- lm(position_of_switch ~ I(computer_avg_speed_before_switch * 1000), data 
 abline(reg)
 # Ok - so it really looks like that one's speed prior to the switch predicts when monitor would switch. In other words, the faster the mover is, the more of the maze the monitor will let them complete.
 
-
 # - iii) Summary of regression
 summary(reg)
 #Ok - it explains 32% of the variance as to what causes monitors wait longer on their mover.
+
 
 
 # - iv) Let's try incorperating reset counter into the equation
@@ -766,6 +751,7 @@ summary(reg)
 plot(position_of_switch ~ computer_reset_counter_at_time_of_switch, data = masterDataExclusions_all_switchers)
 
 #How counterintuitive. Maybe I should just disregard this?
+
 
 
 
@@ -790,10 +776,10 @@ summary(mlreg)
 # - iii) Plots
 par(mfrow=c(1,2))
 plot(I(computer_solo_time/100) ~ I(computer_avg_speed_before_switch_z), data = masterDataExclusions_all_switchers,
-     ylab = "Computer Solo Time (s)", xlab = "Computer Avg Speed before switch (z)", 
+     ylab = "Mover Solo Time (s)", xlab = "MOver Avg Speed before switch (z)", 
      main = "Speed vs. mover completion Time")
 plot(I(computer_overall_speed) ~ I(computer_avg_speed_before_switch_z), data = masterDataExclusions_all_switchers,
-     ylab = "Overall Avg Speed (checkpoints/second)", xlab = "Computer avg speed before switch (z)",
+     ylab = "Mover Overall Avg Speed (checkpoints/second)", xlab = "Mover avg speed before switch (z)",
      main = "Speed vs. Mover Overall Speed", ylim = c(0.005, 0.025))
 par(mfrow=c(1,1))
 
@@ -803,32 +789,11 @@ par(mfrow=c(1,1))
 
 
 
-# --- C) Does this mean that the computer improves way more than the human?
-
-# - i) Significance testing: t-test with improvement indexes
-holder_monitor <- data.frame("Improvement Index" = masterDataExclusions_all_switchers$improvement_index,
-                             "Condition" = "Monitor")
-holder_mover <-  data.frame("Improvement Index" =  masterDataExclusions_all_switchers$computer_post_switch_improvement_index, "Condition" = "Mover")
-holder_final <- rbind(holder_monitor, holder_mover)
-
-t.test(holder_final$Improvement.Index ~ as.factor(holder_final$Condition))
-
-#YES!!! If the mover would've allowed the computer to continue, then the computer would've improved MUCH MORE than the monitor! In other wrods, the computer improves by roughly 30% more than the monitor!
-
-# - ii) Graphs
-plot(improvement_index ~ computer_post_switch_improvement_index, data = masterDataExclusions_all_switchers,
-     xlim = c(-.005, .015), ylim = c(-.005, .015), ylab = "Improvement Index (Monitor)",
-     xlab = "Post-Switch Improvement Index (mover)", main = "Who improved more?")
-abline(a = 0, b = 1)
-
-#YES!! The computer alLMOST ALWAYS improves more, even visually.
-
-
 
 
 
 #*****************************************************************************************************
-#       Analysis V: What do monitors use to determines IF they should switch? Is it even a good metric?
+#       Analysis V: What do monitors use to determines IF they should switch? 
 #*****************************************************************************************************
 
 
@@ -887,7 +852,6 @@ masterDataExclusions_non_switchers$computer_30s_average_speed <- avg_speed_vecto
 masterDataExclusions_all_switchers$computer_60s_average_speed <- avg_speed_vector_grabber(60, FALSE)
 masterDataExclusions_non_switchers$computer_60s_average_speed <- avg_speed_vector_grabber(60, TRUE)
 
-View(masterDataExclusions_all_switchers$computer_60s_average_speed)
 
 # - ii) Create holders: 10s
 holder_1 <- data.frame("Time Window" = "10s", "Status" = "Switched", "Average_Speed" = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$computer_elapsed_time <= 1000,]$computer_10s_average_speed) 
@@ -912,29 +876,9 @@ holder_final <- rbind(holder_10s, rbind(holder_30s, holder_60s))
 
 
 # - vi) Time to finally plot...
-holder_final$Average_Speed
-
-
 ggplot(holder_final, aes(x = Time.Window, y = Average_Speed, fill = Status)) +
-  geom_hline(yintercept = c(0,0,0), linetype = "dashed", color = c("blue","red", "green")) +
   stat_summary(fun.data = "mean_cl_boot", aes(color = Status), position = position_dodge(width = .25)) +
   ggtitle("Speeds by Time Window with 95% CIs")
-
-
-ggplot(holder_final, aes(x = Status, y = Average_Speed))  +
-  stat_summary(fun.data = "mean_cl_boot", position = position_dodge(width = .25)) +
-  ggtitle("final speed by item with 95% CIs")
-
-
-
-head(avg_speed_vector_grabber(10))
-View(masterDataExclusions_non_switchers)
-
-
-
-# TODO - Figure out WHAT FACTORS CAUSE PEOPLE TO SWITCH (If they switch) vs. when they swich
-# To do this, take the first 30 seconds of mover data an dlook at something like wall rams or average speed,
-# and compare that to the first 30 seconds of the switchers data, then see if they differ from eachother.
 
 
 
@@ -946,7 +890,7 @@ View(masterDataExclusions_non_switchers)
 
 #************************************************************
 #                     Data Preperation
-#*************************************************************
+#************************************************************
 
 # --- 1) "Compared to most people, how skilled do you think you are?"
 # -i) Monitor
@@ -1014,6 +958,7 @@ switchers <- masterDataExclusions[masterDataExclusions$game_mode == 3,]
 non_switchers <- masterDataExclusions[masterDataExclusions$game_mode == 2,]
 
 
+
 #************************************************************
 #Analysis 1: Do people want to be switched on?
 #************************************************************
@@ -1042,28 +987,6 @@ par(mfrow=c(1,1))
 
 # --- 2) Do the movers who are switched on want to be switched on?
 
-# -- A) Did mover want to switch vs. were they actually switched on
-
-par(mfrow=c(1,2))
-table<-round(prop.table(
-  table(masterDataExclusions[masterDataExclusions$computer_switch_goodbad == "Partner wanted switch",]$switch)),2)
-plot <- barplot(table, main = "Movers who wanted switch", 
-                xlab = "Were they switched on?", ylab = "Proportion", names = c("No", "Yes"))
-text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
-plot
-table<-round(prop.table(
-  table(masterDataExclusions[masterDataExclusions$computer_switch_goodbad == "Partner didn't want switch",]$switch)),2)
-plot <- barplot(table, main = "Movers who did NOT want switch", 
-                xlab = "Were they switched on?", ylab = "Proportion", names = c("No", "Yes"))
-text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
-plot
-par(mfrow=c(1,1))
-
-#Wow. I guess it doesn't matter whether or not you want to be switched on: regardless of what you think, you'll be switched on 70% of the itme
-
-
-# -- B) Combine previous datasets together: how many movers were satisfied vs. dissatisfied
-
 t1 <- table(masterDataExclusions[masterDataExclusions$computer_switch_goodbad == "Partner wanted switch",]$switch)
 names(t1) <- c("Dissatisfied", "Satisfied")
 t2 <- table(masterDataExclusions[masterDataExclusions$computer_switch_goodbad == "Partner didn't want switch",]$switch)
@@ -1072,16 +995,17 @@ n <- intersect(names(t1), names(t2))
 combined_table <- t1[n] + t2[n]
 
 plot <- barplot(prop.table(combined_table), main = "How many are satisfied with the switch decision?", 
-                xlab = "Satisfied with switch decision?", ylab = "Proportion")
+                xlab = "Mover with switch decision?", ylab = "Proportion")
 text(x = plot, y = prop.table(combined_table), 
      label = round(prop.table(combined_table),2), pos = 1, cex = 1, col = "red")
 plot
 
 #Wow - so it's roughly a 50/50 split in that half are dissatisfied and the other half are satisfied
 
-# -- C) Different way of showing satisfaction 
+# - ii) Different way of showing satisfaction 
 
 ggplot(masterDataExclusions, aes(x = computer_name, y = switch, color = effects_of_switch > 0)) + geom_point(position = position_jitter(w = 0, h = .1)) + facet_wrap(~computer_switch_goodbad, scales="free") + scale_color_manual(values=c("green","red")) + labs(colour = "Switching Hurt Performance?") + xlab("Partner Name") + ylab("Did the switch happen?")
+
 
 
 # --- 3) What motivates switchers/movers into wanting/not wanting to switch? Is it objective skill?
@@ -1103,13 +1027,14 @@ par(mfrow=c(1,1))
 
 
 
+
 # --- 4) Are switchers perceptions of the switch accurate?
 
 # -- A) Given the objective impact of a switch, do people realize how much the switch helped/hurt them?
 
 plot(I(switch_impact * -1)  ~ I(effects_of_switch/100), data = switchers, 
-     main = "Are people good judges of switch?", ylab = "How much do you think the switch hurt you? (5 = alot)",
-     xlab = "How much did the switch OBJECTIVELY hurt you (s)")
+     main = "Are people good judges of switch?", ylab = "How much do you think the switch hurt group? (5 = alot)",
+     xlab = "How much did the switch OBJECTIVELY hurt group (s)")
 abline(v = 0, col = "black")
 abline(h = 0, col = "black")
 
@@ -1120,7 +1045,7 @@ abline(h = 0, col = "black")
 
 # - i) Variable creation
 switchers$good_performance_judge <- NA
-switchers$good_performance_judge <- switchers$switch_impact * switchers$effects_of_switch > 0
+switchers$good_performance_judge <- switchers$switch_impact * switchers$effects_of_switch > 0.0
 
 # - ii) Plot it
 table <- round(prop.table(table(switchers$good_performance_judge)), 2)
@@ -1143,7 +1068,7 @@ plot
 par(mfrow=c(1,3))
 boxplot(Partner_Likeability ~ I(game_mode == 2), data = masterDataExclusions, 
         main = "Partner Likeability",
-        xlab = "Grou[p", names = c("Switchers", "Non Switchers"), ylab = "Completion Time (s)")
+        xlab = "Group", names = c("Switchers", "Non Switchers"), ylab = "Completion Time (s)")
 
 table <- round(prop.table(table(switchers$Partner_Likeability)), 2)
 plot <- barplot(table, main = "Switchers", ylab = "Proportion", xlab = "Partner Likeability")
@@ -1159,10 +1084,7 @@ par(mfrow=c(1,1))
 
 # --- 2) Does likeability have to do with the timing of the switch?
 
-par(mfrow=c(1,3))
-table <- round(table(switchers$Partner_Likeability), 2)
-plot <- barplot(table, main = "Sample Size of Likeability bins", ylab = "Sample Size", xlab = "Partner Likeability")
-text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
+par(mfrow=c(1,2))
 boxplot(position_of_switch ~ Partner_Likeability, data = masterDataExclusions_all_switchers, 
         xlab = "Likeability", ylab = "Position of switch (checkpoint)",
         main = "Does position of switch affect likeability?")
@@ -1270,8 +1192,6 @@ boxplot(Partner_Likeability ~ I(game_mode == 2), data = women, names = c("Non Sw
         main = "Women", ylab = "Partner Likeability Index")
 boxplot(Partner_Likeability ~ I(game_mode == 2), data = men, names = c("Non Switchers", "Switchers"), 
         main = "Men", ylab = "Partner Likeability Index")
-
-boxplot(women$Partner_Likeability, main = "Women", xlab - "Partner Likeability", ylab = "Switcher?")
 par(mfrow=c(1,1))
 
 # Doesn't look like it again: both men and women like people the same amount, regardless of whether or not they've switched.

@@ -537,33 +537,16 @@ t.test(holder_final$Improvement.Index ~ as.factor(holder_final$Condition))
 
 # -- A) Create a graph to show movers speed vs. monitor's speed
 
-# - i) First, create a generic function to get the speed vector.
-
-speed_vector_grabber <- function(mode){
-  if(mode == 1){
-    data = moverData
-  }else if(mode == 2){
-    data = masterDataExclusions_all_switchers
-  }else if(mode == 3){ #For early switchers
-    data = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$position_of_switch <= mean(masterDataExclusions_all_switchers$position_of_switch),]
-  }else if(mode == 4){ #For late switchers
-    data = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$position_of_switch > mean(masterDataExclusions_all_switchers$position_of_switch),]
-  }
+# - i) First, create mover dataset
   
   speed_vector <- 0
   for(percent in c(1:100)){
     storage_vector <- 0 #stores all the speed markers for the entire dataset before averaging em together.
 
-    for(counter in c(1:nrow(data))){ #Get every single mover's speed string
-      speed_string <- toString(data$speed_string[counter])
+    for(counter in c(1:nrow(moverData))){ #Get every single mover's speed string
+      speed_string <- toString(moverData$speed_string[counter])
       speed_string_stamps <- unlist(strsplit(speed_string, "\\W;")) #Split progress string by character ';'
-      percent_marker <- 0
-      
-      if(mode == 1){#moverData
-        percent_marker <- data$completion_time[counter] * 100 * (.01 * percent) # the 100 converts the ms to s
-      }else{#moverData
-        percent_marker <- data$human_elapsed_time[counter]  * (.01 * percent) # human time is already in ms
-      }
+      percent_marker <- moverData$completion_time[counter]  * 100 *(.01 * percent) # human time is already in ms
 
       
       for(stamp_counter in c(1:length(speed_string_stamps))){ #Loops through every stamp in speed string
@@ -581,19 +564,42 @@ speed_vector_grabber <- function(mode){
   }#end of for(moverData)
   speed_vector[percent] <- mean(storage_vector) #Add mean of the storage vector to the speed vector.
 }#end of for (percent)
-  return(speed_vector)
-}#end of function
 
-
-# ii) Create the MOVER dataframe
-mover <- data.frame(speed_vector_grabber(1))
+mover <- data.frame(speed_vector)
 names(mover) <- "speed"
 mover$percent_completed <- c(1:100)
 mover$group <- "mover"
 mover$speed <- round(mover$speed * 1000,2)
+rm(speed_vector)
 
-# iii) Create the SWITCHER dataframe
-switcher <- data.frame(speed_vector_grabber(2))
+
+# ii) Create the SWITCHER dataframe
+speed_vector <- 0
+for(percent in c(1:100)){
+  storage_vector <- 0 #stores all the speed markers for the entire dataset before averaging em together.
+  
+  for(counter in c(1:nrow(masterDataExclusions_all_switchers))){ #Get every single mover's speed string
+    speed_string <- toString(masterDataExclusions_all_switchers$speed_string[counter])
+    speed_string_stamps <- unlist(strsplit(speed_string, "\\W;")) #Split progress string by character ';'
+    percent_marker <- masterDataExclusions_all_switchers$human_elapsed_time[counter] *(.01 * percent) # human time is already in ms
+    
+    for(stamp_counter in c(1:length(speed_string_stamps))){ #Loops through every stamp in speed string
+      current_stamp <- unlist(strsplit(speed_string_stamps[stamp_counter], ","))
+      
+      if(stamp_counter == 1) #removes the ';' that comes before the first timestamp
+        current_stamp[1] <- substr(current_stamp[1], 2, nchar(current_stamp[1])) 
+      
+      if(as.numeric(current_stamp[1]) >= percent_marker){ #Once we've found the proper speed
+        current_speed <- as.numeric(current_stamp[2])
+        break
+      }
+    }#end of for(stamp_counter)
+    storage_vector[counter] <- current_speed
+  }#end of for(moverData)
+  speed_vector[percent] <- mean(storage_vector) #Add mean of the storage vector to the speed vector.
+}#end of for (percent)
+
+switcher <- data.frame(speed_vector)
 names(switcher) <- "speed"
 switcher$percent_completed <- c(1:100)
 switcher$group <- "switcher"
@@ -604,45 +610,25 @@ combined <- rbind(mover, switcher)
 ggplot(combined, aes(x = percent_completed, y=speed, color = group)) +
   geom_point() + ggtitle("Speed vs. Percent Completed by Group")
 
-#vi) Create dataset of early switchers
-early_switcher <- data.frame(speed_vector_grabber(3))
-names(early_switcher) <- "speed"
-early_switcher$percent_completed <- c(1:100)
-early_switcher$group <- "early switcher"
-early_switcher$speed <- round(early_switcher$speed * 1000,2)
-
-#vii) Create dataset of late switchers
-late_switcher <- data.frame(speed_vector_grabber(4))
-names(late_switcher) <- "speed"
-late_switcher$percent_completed <- c(1:100)
-late_switcher$group <- "late switcher"
-late_switcher$speed <- round(late_switcher$speed * 1000,2)
-
-# - vii) Create combined dataset & plot it
-combined <- rbind(mover, rbind(early_switcher, late_switcher))
-ggplot(combined, aes(x = percent_completed, y=speed, color = group)) +
-  geom_point()
 
 
-# - ii) Graphs
 
-#Simplified Improvement Graph
-plot(improvement_index ~ computer_post_switch_improvement_index, data = masterDataExclusions_all_switchers,
-     xlim = c(-.005, .015), ylim = c(-.005, .015), ylab = "MONITOR post-switch improvmenet",
-     xlab = "MOVER post-switch improvement", main = "Who improved more?")
-abline(a = 0, b = 1)
+# - ii) IMprovement index approximation
 
-#GGplot improvement: Does the timing of thd switch affect imtprovement index?
-ggplot(masterDataExclusions_all_switchers, 
-       aes(x=computer_post_switch_improvement_index, y=improvement_index, color = position_of_switch)) + 
-  geom_point() + ylim(c(-.005,.015)) + xlim(c(-.005,.015)) + geom_abline(intercept = 0, slope = 1) +
-  ylab("Monitor Improvement Index after Switch") +
-  xlab("Mover Improvement Index after Switch") + 
-  scale_color_gradient2(low="red", mid = "purple",high="blue", midpoint = 50)
+#Who does better at the start: the switcher or the mover?
+monitor_relative_speed_index <- (masterDataExclusions_all_switchers$overall_avg_speed - masterDataExclusions_all_switchers$computer_avg_speed_before_switch)* 1000
+hist(monitor_relative_speed_index,
+     main = "Was the switcher faster than the mover (early)?", breaks = 25,
+     xlab = "Switcher Speed vs. Early Mover Speed (+ means switcher was faster)", xlim=c(-20,20))
+abline(v=mean(monitor_relative_speed_index), col = "red")
 
 
-#YES!! The computer alLMOST ALWAYS improves more, even visually.
-
+#Who does better at the end: the switcher or the mover?
+monitor_relative_speed_index <- (masterDataExclusions_all_switchers$overall_avg_speed - masterDataExclusions_all_switchers$computer_avg_speed_after_switch)* 1000
+hist(monitor_relative_speed_index,
+     main = "Was the switcher faster than the mover (late)?", breaks = 25,
+     xlab = "Switcher Speed vs. Early Mover Speed (+ means switcher was faster)", xlim=c(-20,20))
+abline(v=mean(monitor_relative_speed_index), col = "red")
 
 
 
@@ -699,7 +685,7 @@ abline(h = 0, col = "black")
 
 
 # - ii) mixed linear reg
-mlreg <- lme(I(effects_of_switch/100) ~ position_of_switch, data = masterDataExclusions_all_switchers, 
+mlreg <- lme(I(effects_of_switch/100) ~ position/_of_switch, data = masterDataExclusions_all_switchers, 
              random=~1|computer_id)
 summary(mlreg)
 
@@ -1191,6 +1177,8 @@ plot <- barplot(table, main = "Women", xlab = "Are you a switcher?", ylim=c(0,.7
 text(x = plot, y = table, label = table, pos = 1, cex = 1, col = "red")
 plot
 par(mfrow=c(1,1))
+
+lm(switch ~ gender, data = masterDataExclusions)
 
 
 #Not really - both mena nd women switch at a roughy equal rates. Although roughly 9% more men chose not to switch, which is kind of counteirntuitive

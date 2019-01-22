@@ -544,6 +544,10 @@ speed_vector_grabber <- function(mode){
     data = moverData
   }else if(mode == 2){
     data = masterDataExclusions_all_switchers
+  }else if(mode == 3){ #For early switchers
+    data = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$position_of_switch <= mean(masterDataExclusions_all_switchers$position_of_switch),]
+  }else if(mode == 4){ #For late switchers
+    data = masterDataExclusions_all_switchers[masterDataExclusions_all_switchers$position_of_switch > mean(masterDataExclusions_all_switchers$position_of_switch),]
   }
   
   speed_vector <- 0
@@ -553,8 +557,15 @@ speed_vector_grabber <- function(mode){
     for(counter in c(1:nrow(data))){ #Get every single mover's speed string
       speed_string <- toString(data$speed_string[counter])
       speed_string_stamps <- unlist(strsplit(speed_string, "\\W;")) #Split progress string by character ';'
-      percent_marker <- data$completion_time[counter] * 100 * (.01 * percent) # the 100 converts the ms to s
-    
+      percent_marker <- 0
+      
+      if(mode == 1){#moverData
+        percent_marker <- data$completion_time[counter] * 100 * (.01 * percent) # the 100 converts the ms to s
+      }else{#moverData
+        percent_marker <- data$human_elapsed_time[counter]  * (.01 * percent) # human time is already in ms
+      }
+
+      
       for(stamp_counter in c(1:length(speed_string_stamps))){ #Loops through every stamp in speed string
         current_stamp <- unlist(strsplit(speed_string_stamps[stamp_counter], ","))
       
@@ -580,7 +591,6 @@ names(mover) <- "speed"
 mover$percent_completed <- c(1:100)
 mover$group <- "mover"
 mover$speed <- round(mover$speed * 1000,2)
-View(mover)
 
 # iii) Create the SWITCHER dataframe
 switcher <- data.frame(speed_vector_grabber(2))
@@ -588,14 +598,28 @@ names(switcher) <- "speed"
 switcher$percent_completed <- c(1:100)
 switcher$group <- "switcher"
 switcher$speed <- round(switcher$speed * 1000,2)
-switcher$speed
 
-# - iv) Create combined dataset
+# - iv) Create combined dataset & plot it
 combined <- rbind(mover, switcher)
-rm(switcher); rm(mover);
+ggplot(combined, aes(x = percent_completed, y=speed, color = group)) +
+  geom_point() + ggtitle("Speed vs. Percent Completed by Group")
 
-# v) Plot the bad boy
+#vi) Create dataset of early switchers
+early_switcher <- data.frame(speed_vector_grabber(3))
+names(early_switcher) <- "speed"
+early_switcher$percent_completed <- c(1:100)
+early_switcher$group <- "early switcher"
+early_switcher$speed <- round(early_switcher$speed * 1000,2)
 
+#vii) Create dataset of late switchers
+late_switcher <- data.frame(speed_vector_grabber(4))
+names(late_switcher) <- "speed"
+late_switcher$percent_completed <- c(1:100)
+late_switcher$group <- "late switcher"
+late_switcher$speed <- round(late_switcher$speed * 1000,2)
+
+# - vii) Create combined dataset & plot it
+combined <- rbind(mover, rbind(early_switcher, late_switcher))
 ggplot(combined, aes(x = percent_completed, y=speed, color = group)) +
   geom_point()
 

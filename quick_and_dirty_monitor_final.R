@@ -4,6 +4,7 @@ library(ggplot2) #beautiful plots
 library(Hmisc) # beautiful plots supplement
 library(nlme) #mixed linear effects
 library(lme4)
+library(waffle)
 
 #************************************************************
 #                     Data Preperation
@@ -211,6 +212,7 @@ rm(monitor_mean)
 reg <- lme(Completion.Time ~ Group, data = holder, random=~1|computer_id)
 summary(reg)
 
+intervals(reg)$fixed
 
 #DOn't do a t-test; there's uniqueal cells
 
@@ -289,6 +291,7 @@ summary(reg)
 # - v) Mixed linear effects - completion time Zs
 mlreg = lme(monitor_completion_time_z ~ switch, data = masterDataExclusions, random=~1|computer_id)
 summary(mlreg)
+confint(mlreg)
 
 
 
@@ -1240,6 +1243,14 @@ total_count <- switch_count + non_switch_count
 non_switch_CIs <- prop.test(non_switch_count, total_count)
 switch_CIs <- prop.test(switch_count, total_count)
 
+waffle_frame <- data.frame("Status" = "Switched", "Count" = switch_count)
+waffle_frame <- rbind(waffle_frame, data.frame("Status" = "Switched", "Count" = non_switch_count))
+
+parts <- c("Participants who switched"=91, "Participants who did not switch" =53)
+waffle(parts = parts, colors = c("Red", "Blue", "White"), legend_pos = "bottom", rows = 7) 
+
+
+
 data <- data.frame("Group" = c("Non Switchers", "Switchers"), 
                    "Prop" = c(round(non_switch_count/total_count, 2), round(switch_count/total_count, 2)),
                    "Lower" = c(non_switch_CIs$conf.int[1], switch_CIs$conf.int[1]),
@@ -1264,14 +1275,16 @@ holder$bonus <- (200 - holder$completion_time)/100
 
 
 ggplot(holder, aes(x = group, y = completion_time)) +
+  geom_violin() +
   stat_summary(fun.data = "mean_cl_boot", position = position_dodge(width = .25)) + 
   ylab("Completion Time (s)") + xlab(NULL) +
-  scale_x_discrete(labels= c("Prime Movers", "Auditor - Switchers", "Auditor - Non-Switcher")) +
+  scale_x_discrete(labels= c("Prime Movers", "Monitors - Switched", "Monitors - Did Not Switch")) +
   theme(axis.text.x = element_text(size=15))
 
 mean(masterDataExclusions)
 
-
+@@@
+lme(completion_time ~ holder$group, data = holder)
 
 
 # Figure out the ffects of the switch...
@@ -1386,7 +1399,6 @@ ggplot(mover_progress_frame,aes(x=checkpoint_percent, y = speeds)) + geom_smooth
 #Monitor - TODO
 switcher_progress_frame <- data.frame()
 for(counter in c(1:length(masterDataExclusions_all_switchers))){
-  
   #Get rid of all the prime mover's timestamps, or the timestamps before the switch.
   timestamp_vector <- 
     as.numeric(string_decompressor(toString(masterDataExclusions_all_switchers$progress_string[counter]), TRUE))
@@ -1407,33 +1419,79 @@ for(counter in c(1:length(masterDataExclusions_all_switchers))){
   x$speeds <- get_speed_vector_from_times(timestamp_vector, speed_vector)
   x$checkpoint_percent <- 
     round( (as.numeric(x$checkpoint))/(nrow(x)+computer_checkpoints) * 100, 2)
+  
   x$id <-counter
+  x$mover_elapsed_time <- masterDataExclusions_all_switchers$computer_elapsed_time[counter]/100
+  x$start_checkpoint <- x$checkpoint[1]
+  x$start_checkpoint_percent <-x$checkpoint_percent[1]
+  x$end_checkpoint_percent <- x$checkpoint_percent[nrow(x)]
   switcher_progress_frame <- rbind(switcher_progress_frame, x) 
 }
 
 switcher_progress_frame$speeds <- switcher_progress_frame$speeds * 1000
 switcher_progress_frame$timestamp <- switcher_progress_frame$timestamp/100 #converst ms to s
 switcher_progress_frame <- 
-  switcher_progress_frame[switcher_progress_frame$speeds >= -10,]
+  switcher_progress_frame[switcher_progress_frame$speeds >= -100,]
+
+
+switched_progress_frame_late <- switcher_progress_frame[switcher_progress_frame$start_checkpoint_percent >= mean(switcher_progress_frame$start_checkpoint_percent ),]
+switched_progress_frame_early <- switcher_progress_frame[switcher_progress_frame$start_checkpoint_percent < mean(switcher_progress_frame$start_checkpoint_percent ),]
 
 #Combine the datasets
-switcher_progress_frame$group <- "switcher"
-mover_progress_frame$group <- "mover"
-final_combined <- rbind(switcher_progress_frame, mover_progress_frame)
+# switcher_progress_frame$group <- "switcher"
+# mover_progress_frame$group <- "mover"
+# final_combined <- rbind(switcher_progress_frame, mover_progress_frame)
 
 
 
-  
-ggplot(final_combined,aes(x=checkpoint_percent, y = speeds, group = group, color = group)) + 
-  geom_smooth() +
-  xlab("Percent of Maze Complete") 
+
+#Combined SPEED ggplot
+ggplot(switcher_progress_frame,aes(x=checkpoint_percent, y = speeds)) + 
+  ylim(c(0,20)) +
+  geom_smooth(data = mover_progress_frame, aes(x=checkpoint_percent, y = speeds), color = "black", size = 2, 
+              method = "gam", formula = y ~ log(x)) +
+  geom_smooth(data = switched_progress_frame_late, aes(x=checkpoint_percent, y = speeds), color = "red", size = 2, method = "gam", formula = y ~ log(x)) +
+  geom_smooth(data = switched_progress_frame_early, aes(x=checkpoint_percent, y = speeds), color = "orange", size = 2, method = "gam", formula = y ~ log(x)) +
+  geom_smooth(data = switcher_progress_frame, aes(x=checkpoint_percent, y = speeds), color = "green", size = 1, method = "gam", formula = y ~ log(x))
+
+View(switcher_progress_frame)
+
+summary(switcher_progress_frame$speeds)
+
+
+#GGplot showing checkpoint percent vs. speed for JUST MONITORS
+ggplot(switcher_progress_frame,aes(x=checkpoint_percent, y = speeds, color = start_checkpoint_percent, group = id)) +
+  geom_line(size=1) +
+  geom_smooth(data = mover_progress_frame, aes(x=checkpoint_percent, y = speeds, group = group), color = "red")
+
+#BEAUTIFUl ggplto showing mover's data
+ggplot(mover_progress_frame,aes(x=checkpoint_percent, y = speeds)) + geom_point(size=.5) + 
+  geom_smooth(data = mover_progress_frame, aes(x=checkpoint_percent, y = speeds))
+
+
+
+
+#Monitor only @@@ - Before Adam
+switcher_progress_frame$timestamp_with_mover <- switcher_progress_frame$timestamp + switcher_progress_frame$mover_elapsed_time
+
+ggplot(switcher_progress_frame,aes(x=timestamp_with_mover, y = checkpoint_percent)) + geom_point(size=.5) + 
+  geom_smooth(data = switcher_progress_frame, aes(x=timestamp_with_mover, y = checkpoint_percent), method = "loess")
+
+#mover only
+ggplot(mover_progress_frame,aes(x=timestamp, y = checkpoint_percent)) + geom_point(size=.5) + 
+  geom_smooth(data = mover_progress_frame, aes(x=timestamp, y = checkpoint_percent))
+
+
+#Mover vs. monitor
+ggplot(switcher_progress_frame,aes(x=timestamp_with_mover, y = checkpoint_percent, group = id)) + geom_line(size=.5, alpha = .1) + ylim(c(0,100)) +
+  geom_smooth(data = mover_progress_frame, aes(x=timestamp, y = checkpoint_percent, group = group), 
+              method = "auto")
 
 
 #Mover 
 #holder <- tapply(mover_progress_frame$speeds, mover_progress_frame$checkpoint_percent, mean)
 #holder <- data.frame("timestamp"= holder, "checkpoint" = c(1:length(holder)))
 
-ggplot(mover_progress_frame,aes(x=checkpoint_percent, y = speeds)) + geom_smooth() +
   xlab("Percent of Maze Complete") 
 
 #, color = id, group = id)) +
@@ -1490,6 +1548,7 @@ rm(speed_vector)
 
 # ii) Create the SWITCHER dataframe
 speed_vector <- 0
+error_vector <- 0 #stores all the errors to calculate confidence intervals later
 for(percent in c(1:100)){
   storage_vector <- 0 #stores all the speed markers for the entire dataset before averaging em together.
   
@@ -1509,22 +1568,29 @@ for(percent in c(1:100)){
         break
       }
     }#end of for(stamp_counter)
-    storage_vector[counter] <- current_speed
+    storage_vector[counter] <- current_speed * 1000
   }#end of for(moverData)
   speed_vector[percent] <- mean(storage_vector) #Add mean of the storage vector to the speed vector.
+  error_vector[percent] <- qnorm(0.975) * sd(storage_vector) / sqrt(length(storage_vector))
 }#end of for (percent)
 
 switcher <- data.frame(speed_vector)
 names(switcher) <- "speed"
+switcher$error <- error_vector
 switcher$percent_completed <- c(1:100)
 switcher$group <- "switcher"
-switcher$speed <- round(switcher$speed * 1000,2)
 switcher$percent_completed <- (switcher$percent_completed * .7) + 30
 
+View(switcher)
 
 # - iv) Create combined dataset & plot it
 combined <- rbind(mover, switcher)
 ggplot(combined, aes(x = percent_completed, y=speed, color = group)) +
-  geom_point() + ggtitle("Speed vs. Percent Completed by Group")
+  geom_point() + geom_errorbar()
 
+    geom_smooth(method="loess", method.args=list()) + xlab("Percent of maze completed")
+
+
+
+# 
 

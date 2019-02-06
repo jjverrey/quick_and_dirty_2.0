@@ -1310,7 +1310,7 @@ a + error #uper confidence interval
 
  
 
-#@@@ Finally, create learning curve graph
+# Finally, create learning curve graph
 
 
 
@@ -1511,8 +1511,12 @@ hist(moverData$maze_total_pixel_movement)
 
 
 
-# --- 4)  Create Gilbert's graph
+# --- 4)  Create Gilbert's graph - Percent of Performance
+
+
+#This for loop essentially creates a speed vector of MEANS, from 1 to 100
 speed_vector <- 0
+error_vector <- 0
 for(percent in c(1:100)){
   storage_vector <- 0 #stores all the speed markers for the entire dataset before averaging em together.
   
@@ -1533,18 +1537,19 @@ for(percent in c(1:100)){
         break
       }
     }#end of for(stamp_counter)
-    storage_vector[counter] <- current_speed
+    storage_vector[counter] <- current_speed * 1000
   }#end of for(moverData)
   speed_vector[percent] <- mean(storage_vector) #Add mean of the storage vector to the speed vector.
+  error_vector[percent] <- qnorm(0.975) * sd(storage_vector) / sqrt(length(storage_vector))
 }#end of for (percent)
 
 mover <- data.frame(speed_vector)
 names(mover) <- "speed"
 mover$percent_completed <- c(1:100)
 mover$group <- "mover"
-mover$speed <- round(mover$speed * 1000,2)
+mover$error <- error_vector
 rm(speed_vector)
-
+rm(error_vector)
 
 # ii) Create the SWITCHER dataframe
 speed_vector <- 0
@@ -1579,18 +1584,164 @@ names(switcher) <- "speed"
 switcher$error <- error_vector
 switcher$percent_completed <- c(1:100)
 switcher$group <- "switcher"
-switcher$percent_completed <- (switcher$percent_completed * .7) + 30
 
-View(switcher)
+
 
 # - iv) Create combined dataset & plot it
 combined <- rbind(mover, switcher)
+
 ggplot(combined, aes(x = percent_completed, y=speed, color = group)) +
-  geom_point() + geom_errorbar()
-
-    geom_smooth(method="loess", method.args=list()) + xlab("Percent of maze completed")
+  geom_smooth(method="loess", method.args=list(), se = FALSE) + xlab("Percent of performance") 
 
 
+View(combined)
 
-# 
+loess_reg <- loess(speed ~ percent_completed, data = subset(combined, group == "mover"))
+
+diff(loess_reg$fitted)
+
+summary(loess_reg)
+
+
+# 5)  Gilbert's Graph with CHECKPOINTS
+
+#Takes a progress or speed string & turns it into a data frame
+# example arguments: string_decompressor(toString(moverData$speed_string[2]))
+string_decompressor <- function(progress_string, return_timestamp){
+  timestamp_vector <- 0 #stores all the progress string's timestamps
+  progress_vector <- 0 #stores all the progress string's vectors
+  progress_string_stamps <- unlist(strsplit(progress_string, "\\W;")) #Split progress string by character ';'
+  
+  for(stamp_counter in c(1:length(progress_string_stamps))){ #Loops through every stamp
+    current_stamp <- unlist(strsplit(progress_string_stamps[stamp_counter], ","))
+    
+    if(stamp_counter == 1) #removes the ';' that comes before the first timestamp
+      current_stamp[1] <- substr(current_stamp[1], 2, nchar(current_stamp[1])) 
+    
+    timestamp_vector[stamp_counter] <- current_stamp[1]  
+    progress_vector[stamp_counter] <- current_stamp[2]
+  }#end of for(progres_string_stamps)
+  
+  #  progress_frame <- data.frame("Timestamp" = timestamp_vector, "data_name" = progress_vector) 
+  if(return_timestamp)
+    return(timestamp_vector)
+  else
+    return(progress_vector)
+}
+
+
+get_speed_vector_from_times <- function(time_vector, speed_vector){
+  
+  speed_frame <- data.frame("Speed" = as.numeric(speed_vector), "Time" = c(1:length(speed_vector)))
+  time_vector <- round(time_vector/100) 
+  speed_storage_vector <- 0
+  
+  for(counter in c(1:length(time_vector))){ #Get every single mover's speed string
+    target_time <- time_vector[counter]
+    current_speed <- -1
+    
+    for(speed_counter in c(1:length(speed_vector))){ #Loops through every sspeed 
+      current_time <- speed_frame$Time[speed_counter]
+      
+      if(current_time == as.integer(target_time)){ #Once we've found the proper speed
+        current_speed <- speed_vector[speed_counter] #speed_frame$Speed[counter]
+        break
+      }
+    }#end of for(stamp_counter)
+    speed_storage_vector[counter] <- current_speed
+  }#end of for(moverData)
+  
+  return(speed_storage_vector)
+}
+
+
+
+
+#Adds all the mover positions together in a data frame
+mover_progress_frame <- data.frame()
+for(mover_counter in c(1:length(moverData))){
+  timestamp_vector <- as.numeric(string_decompressor(toString(moverData$progress_string[mover_counter]), TRUE))
+  speed_vector <- as.numeric(string_decompressor(toString(moverData$speed_string[mover_counter]), FALSE))
+  
+  x <- data.frame("timestamp" = as.numeric(timestamp_vector),
+                  "checkpoint" = c(1:length(timestamp_vector)))
+  x$speeds <- get_speed_vector_from_times(timestamp_vector, speed_vector)
+  x$checkpoint_percent <- round(as.numeric(x$checkpoint)/nrow(x) * 100, 2)
+  x$id <- mover_counter
+  
+  mover_progress_frame <- rbind(mover_progress_frame, x) 
+}
+
+mover_progress_frame$speeds <- mover_progress_frame$speeds * 1000
+mover_progress_frame$timestamp <- mover_progress_frame$timestamp/100 #converst ms to s
+
+#mover_progress_frame$checkpoint_percent_bin <- ceiling(mover_progress_frame$checkpoint_percent)
+
+ggplot(mover_progress_frame,aes(x=checkpoint_percent, y = speeds)) + geom_smooth() +
+  xlab("Percent of Maze Complete") 
+
+
+
+
+
+
+#Monitor - TODO
+switcher_progress_frame <- data.frame()
+for(counter in c(1:length(masterDataExclusions_all_switchers))){
+  #Get rid of all the prime mover's timestamps, or the timestamps before the switch.
+  timestamp_vector <- 
+    as.numeric(string_decompressor(toString(masterDataExclusions_all_switchers$progress_string[counter]), TRUE))
+  timestamp_vector_size_before_exclusions <- length(timestamp_vector)
+  timestamp_vector <- timestamp_vector - masterDataExclusions_all_switchers$computer_elapsed_time[counter]
+  timestamp_vector <- timestamp_vector[timestamp_vector > 0]
+  
+  #Calculate how many checkpoints the computer performed.
+  timestamp_vector_size_after_exclusions <- length(timestamp_vector)
+  computer_checkpoints <- timestamp_vector_size_before_exclusions - timestamp_vector_size_after_exclusions
+  speed_vector <- 
+    as.numeric(string_decompressor(toString(masterDataExclusions_all_switchers$speed_string[counter]), FALSE))
+  
+  x <- data.frame("timestamp" = as.numeric(timestamp_vector),
+                  "checkpoint" = c(1:length(timestamp_vector)))
+  
+  x$checkpoint <- x$checkpoint + computer_checkpoints #Adjusts checkpoints to incorperate ones the mover did. 
+  x$speeds <- get_speed_vector_from_times(timestamp_vector, speed_vector)
+  x$checkpoint_percent <- 
+    round( (as.numeric(x$checkpoint))/(nrow(x)+computer_checkpoints) * 100, 2)
+  
+  x$id <-counter
+  x$mover_elapsed_time <- masterDataExclusions_all_switchers$computer_elapsed_time[counter]/100
+  x$start_checkpoint <- x$checkpoint[1]
+  x$start_checkpoint_percent <-x$checkpoint_percent[1]
+  x$end_checkpoint_percent <- x$checkpoint_percent[nrow(x)]
+  switcher_progress_frame <- rbind(switcher_progress_frame, x) 
+}
+
+switcher_progress_frame$speeds <- switcher_progress_frame$speeds * 1000
+switcher_progress_frame$timestamp <- switcher_progress_frame$timestamp/100 #converst ms to s
+switcher_progress_frame <- 
+  switcher_progress_frame[switcher_progress_frame$speeds >= -100,]
+
+
+switched_progress_frame_late <- switcher_progress_frame[switcher_progress_frame$start_checkpoint_percent >= mean(switcher_progress_frame$start_checkpoint_percent ),]
+switched_progress_frame_early <- switcher_progress_frame[switcher_progress_frame$start_checkpoint_percent < mean(switcher_progress_frame$start_checkpoint_percent ),]
+
+#Combine the datasets
+# switcher_progress_frame$group <- "switcher"
+# mover_progress_frame$group <- "mover"
+# final_combined <- rbind(switcher_progress_frame, mover_progress_frame)
+
+
+
+
+#Combined SPEED ggplot
+ggplot(switcher_progress_frame,aes(x=checkpoint_percent, y = speeds)) + 
+  ylim(c(0,20)) +
+  geom_smooth(data = mover_progress_frame, aes(x=checkpoint_percent, y = speeds), color = "black", size = 2, 
+              method = "gam", formula = y ~ log(x)) +
+  geom_smooth(data = switched_progress_frame_late, aes(x=checkpoint_percent, y = speeds), color = "red", size = 2, method = "gam", formula = y ~ log(x)) +
+  geom_smooth(data = switched_progress_frame_early, aes(x=checkpoint_percent, y = speeds), color = "orange", size = 2, method = "gam", formula = y ~ log(x)) +
+  geom_smooth(data = switcher_progress_frame, aes(x=checkpoint_percent, y = speeds), color = "green", size = 1, method = "gam", formula = y ~ log(x))
+
+
 

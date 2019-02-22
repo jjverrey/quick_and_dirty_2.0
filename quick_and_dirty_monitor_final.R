@@ -5,6 +5,7 @@ library(Hmisc) # beautiful plots supplement
 library(nlme) #mixed linear effects
 library(lme4)
 library(waffle)
+library(varhandle) #for the check.numeric function
 
 #************************************************************
 #                     Data Preperation
@@ -1796,5 +1797,158 @@ ggplot(switcher_progress_frame,aes(x=checkpoint_percent, y = speeds)) +
   geom_smooth(data = switched_progress_frame_early, aes(x=checkpoint_percent, y = speeds), color = "orange", size = 2, method = "gam", formula = y ~ log(x)) +
   geom_smooth(data = switcher_progress_frame, aes(x=checkpoint_percent, y = speeds), color = "green", size = 1, method = "gam", formula = y ~ log(x))
 
+
+
+
+
+
+
+
+
+
+# David's NEW Graph
+
+#Converts the movement string into a usable dataframe. Set timing_of_switch to 0 if moverData
+pixel_string_decompressor <- function(pixel_string, timing_of_switch){
+  timing_of_switch <- timing_of_switch/100
+  movement_frame <- data.frame("time_in_seconds" = NA, "x" = NA, "y" = NA)
+  pixel_string <- as.character(pixel_string) #movement_string isn't a character initially
+  pixel_string_stamps <- unlist(strsplit(pixel_string, "\\W;")) #Split string into MANY parts by character ';'
+  
+  for(stamp_counter in c(1:length(pixel_string_stamps))){ #Loops through every stamp
+    current_stamp <- unlist(strsplit(pixel_string_stamps[stamp_counter], ","))
+
+    if(!check.numeric(current_stamp[1])) #removes the ';' that comes before the first timestamp
+      current_stamp[1] <- substr(current_stamp[1], 2, nchar(current_stamp[1])) 
+    
+    #Now that the string is decompressed into parts (x,y, timestamp), add it to the dataframe
+    #You can only add info to the dataframe when you MERGE them together
+    temp_frame <- data.frame("x" = current_stamp[1], "y" = current_stamp[2],
+                             "time_in_seconds" = as.numeric(current_stamp[3])/100)
+    movement_frame <- rbind(movement_frame, temp_frame)
+  }#end of for
+  
+  #Converts data frame's char vectors into numeric ones
+  movement_frame <- movement_frame[c(2:nrow(movement_frame)),] #removes NAs in row 1
+  movement_frame$x <- as.numeric(movement_frame$x)
+  movement_frame$y <- as.numeric(movement_frame$y)
+
+  #Adds starting time to array
+  start_time_frame <- data.frame("x" = movement_frame$x[1], "y" = movement_frame$y[1],
+                           "time_in_seconds" = timing_of_switch)
+  movement_frame <- rbind(start_time_frame, movement_frame)
+}
+
+
+
+#Gets OVERALL pixel speed by percent (e.g. speed from 0 - 1%; 0-2%; 0-3%; etc.); switch time should be sent in MS
+get_speed_by_percent <- function(pixel_speed_frame, switch_time){
+  speed_frame <- data.frame("Percent" = 0, "Speed" = 0)
+  
+  #Loops through every percent, starting at 1 and ending at 100
+  for(target_percent in c(1:100)){
+    prev_x <- -1
+    prev_y <- -1
+    distance <- 0
+    final_time <- 0
+
+    #Loops through every instance  of the speed frame
+    for(counter in c(1:nrow(pixel_speed_frame))){
+      current_percent <- pixel_speed_frame$percent_of_performance[counter]
+      current_x <- pixel_speed_frame$x[counter]
+      current_y <- pixel_speed_frame$y[counter]
+      
+      
+      #Breaks the loop if we already have all the data for the target percent (e.g. all distance from 0%-10%)
+      if(current_percent > target_percent){
+        break;
+      }
+
+      #If x/y are initiated... you can't calculate deltaX if you don't know the starting position
+      if(prev_x != -1){
+        deltaX <- abs(current_x - prev_x)
+        deltaY <- abs(current_y - prev_y)
+        
+        if(deltaX == 1 && deltaY == 1)
+          distance <- distance + sqrt(2) #indicates diagnal movement... a^2+b^2=c^2
+        else
+          distance <- distance + 1 #indicates horizontle/verticle movement, or a change in only 1 pixel
+      }
+      
+      #Updates the previous x & y values
+      prev_x <- current_x
+      prev_y <- current_y
+    }#end of for(counter looping through the speed frame)
+
+    #Adds each new target percent 
+    deltaTime <- pixel_speed_frame$time_in_seconds[counter-1] - switch_time/100 #it's counter-1 to get prev value
+    speed <- as.numeric(distance/deltaTime)
+
+    #speed will be invalid if deltaTime = 0. The if statement replaces an invalid value w/ 0
+    if(length(speed) == 0 || is.nan(speed))
+      speed = 0 
+    
+    temp_frame <- data.frame("Percent" = target_percent, "Speed" = speed)
+    speed_frame <- rbind(speed_frame, temp_frame)
+  }#end of for(1% to 100%)
+  
+  rm(counter, temp_frame, deltaTime, speed)
+  return(speed_frame)
+}#end of get_speed_by_percent method
+
+
+
+#***********************************************************************
+# Engine for pixel speed measures - this code takes a LONG time to run
+#***********************************************************************
+
+#Main For Loop. This gets the speed_dif values for EVERY SINGLE MONITOR. It does NOT calculate averages!
+master_change_in_speed_frame <-
+    data.frame("Percent" = NA, "Mover_Speed_Dif" = NA, "Mon_ID" = NA)
+
+for(monitor_counter in c(1:nrow(masterDataExclusions_all_switchers))){
+  
+  #Create mover/monitor pixel speed dataframes
+  switch_time <- masterDataExclusions_all_switchers$computer_elapsed_time[monitor_counter]
+  monitor_frame <- 
+    pixel_string_decompressor(masterDataExclusions_all_switchers$movement_string[monitor_counter],switch_time) 
+  mover_frame <- 
+    pixel_string_decompressor(masterDataExclusions_all_switchers$computer_movement_string[monitor_counter], 0) 
+
+  #Seperates mover frame into POST SWITCH times ONLY
+  mover_frame <- subset(mover_frame, mover_frame$time_in_seconds > switch_time/100) 
+
+  #Standardises time to % of performance
+  monitor_frame$percent_of_performance <-(monitor_frame$time_in_seconds - I(switch_time/100))/ (tail(monitor_frame$time_in_seconds, n=1) - I(switch_time/100))
+  monitor_frame$percent_of_performance <- monitor_frame$percent_of_performance * 100
+  mover_frame$percent_of_performance <-(mover_frame$time_in_seconds - I(switch_time/100))/ (tail(mover_frame$time_in_seconds, n=1) - I(switch_time/100))
+  mover_frame$percent_of_performance <- mover_frame$percent_of_performance * 100
+
+  #Create speed frames
+  mover_speed_frame <- get_speed_by_percent(mover_frame, switch_time)
+  monitor_speed_frame <- get_speed_by_percent(monitor_frame, switch_time)
+
+  #Create change_in_speed frame
+  change_in_speed_vector <- mover_speed_frame$Speed - monitor_speed_frame$Speed
+  change_in_speed_frame <- 
+    data.frame("Percent" = c(0:100), "Mover_Speed_Dif" = change_in_speed_vector, "Mon_ID" = monitor_counter)
+  master_change_in_speed_frame <- rbind(master_change_in_speed_frame, change_in_speed_frame)
+}#end of for(monitor_counter)
+
+
+#Creates vector of means 
+means_vector <- tapply(master_change_in_speed_frame$Mover_Speed_Dif, master_change_in_speed_frame$Percent, mean)
+means_frame <- data.frame("Percent" = c(0:100), "Mean_Mov_Change_In_Speed" = means_vector)
+
+ggplot(master_change_in_speed_frame, aes(x = Percent, y=Mover_Speed_Dif, group = Mon_ID, color = Mon_ID)) + 
+  geom_line() + 
+  theme(legend.position="none")
+  
+
+
+ggplot(means_frame, aes(x = Percent, y=Mean_Mov_Change_In_Speed)) + geom_point()
+  
+  #geom_smooth(method="loess", se = FALSE) + xlab("Percent of performance") +
+  #theme(legend.position="none")
 
 

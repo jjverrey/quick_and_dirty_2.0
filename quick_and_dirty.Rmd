@@ -63,8 +63,10 @@ hist(masterData$completion_time, main = "Frequency vs. Completion Time Bins",
 abline(v=mean(masterData$completion_time))
 par(mfrow = c(1,1))
 ```
+
 ```{r}
-summary(masterData$completion_time)
+sd(masterData$completion_time)
+summary(masterData$total_avg_speed * 100)
 ```
 
 Ok - people took a little longer than a minute and a half, on average, to complete the maze, with a pretty good distribution of scores.

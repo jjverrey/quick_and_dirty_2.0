@@ -1267,46 +1267,99 @@ ggplot(data,aes(x=Group,y=Prop,ymin=Lower,ymax=Upper))+
 
 
 # -- 2) Graph #2: Did the switch work?
+holder <- data.frame()
 
-holder <- data.frame("group" = "Mover", "completion_time" = moverData$completion_time)
-holder <- rbind(holder, data.frame("group" = "Switcher", "completion_time" = masterDataExclusions_all_switchers$completion_time))
-holder <- rbind(holder, data.frame("group" = "Non Switcher", "completion_time" = masterDataExclusions_non_switchers$completion_time))
+holder <- rbind(holder, data.frame("group" = "When monitors did not take over", "completion_time" = masterDataExclusions_non_switchers$completion_time, "computer_id" = masterDataExclusions_non_switchers$computer_id))
+
+holder <- rbind(holder, data.frame("group" = "When monitors did take over", "completion_time" = masterDataExclusions_all_switchers$completion_time, "computer_id" = masterDataExclusions_all_switchers$computer_id))
+
+holder <- rbind(holder, data.frame("group" = "If monitors who did take over hadn't done so", "completion_time" = I(masterDataExclusions_all_switchers$computer_solo_time/100), "computer_id" = masterDataExclusions_all_switchers$computer_id))
+
 holder$bonus <- (200 - holder$completion_time)/100
+holder$group <- factor(holder$group, levels = c("When monitors did not take over", "When monitors did take over", "If monitors who did take over hadn't done so"))
+
+
 
 
 ggplot(holder, aes(x = group, y = completion_time)) +
   geom_violin() +
-  stat_summary(fun.data = "mean_cl_boot", position = position_dodge(width = .25)) + 
-  ylab("Completion Time (s)") + xlab(NULL) +
-  scale_x_discrete(labels= c("Prime Movers", "Monitors - Switched", "Monitors - Did Not Switch")) +
-  theme(axis.text.x = element_text(size=15))
-
-mean(masterDataExclusions)
-
-@@@
-lme(completion_time ~ holder$group, data = holder)
+  stat_summary(fun.data = "mean_cl_boot", position = position_dodge(width = .25), size = 2) + 
+  ylab(NULL) + xlab(NULL) +
+  theme(axis.text.x = element_text(size=30)) + coord_flip()
 
 
-# Figure out the ffects of the switch...
-hist(masterDataExclusions_all_switchers$effects_of_switch/100, breaks = 20, xlab="Effects of switch (s)",
-     main = "")
-abline(v=mean(masterDataExclusions_all_switchers$effects_of_switch/100), col = "red")
+
+rm(reg)
+
+#Monitor-Prime mover teams ONLY: does switching help or hurt performance?
+reg <- lme(completion_time ~ group, data = subset(holder, group != "If monitors who did take over hadn't done so"), random=~1|computer_id)
+summary(reg)
+intervals(reg)
+summary(reg)$tTable[,2] #Gets SE
 
 
-ggplot(masterDataExclusions_all_switchers, aes(x = switch, y = effects_of_switch/100)) +
-  stat_summary(fun.data = "mean_cl_boot", position = position_dodge(width = .25)) +
-  ylab("Effects of switch") + xlab(NULL)
+#Mean monitors_who_took_over (group) completion time
+subset <- subset(holder, group == "When monitors did take over")
+a <- mean(subset$completion_time)
+sd <- sd(subset$completion_time)
+n <- nrow(subset)
+error <- qt(0.975,df=n-1)*sd/sqrt(n)
+a #mean
+a+error #upper limit
+a-error #lower limit
+
+
+#Mean monitors_who_took_over (group) completion time
+rm(subset, a, sd, n, error)
+subset <- subset(holder, group == "When monitors did not take over")
+a <- mean(subset$completion_time)
+sd <- sd(subset$completion_time)
+n <- nrow(subset)
+error <- qt(0.975,df=n-1)*sd/sqrt(n)
+a #mean
+a+error #upper limit
+a-error #lower limit
+
+
+
+
+#Does your partner's performance predict how likely you are to switch?
+reg <- glm(group ~ completion_time, 
+           data = subset(holder, group != "When monitors did take over"), family = binomial(link='logit'))
+summary(reg)
+confint(reg)
+
+
+#Mean of if_monitors_who_did_take_over_handnt_done_so (group) completion time
+rm(subset, a, sd, n, error)
+subset <- subset(holder, group == "If monitors who did take over hadn't done so")
+a <- mean(subset$completion_time)
+sd <- sd(subset$completion_time)
+n <- nrow(subset)
+error <- qt(0.975,df=n-1)*sd/sqrt(n)
+a #mean
+a+error #upper limit
+a-error #lower limit
+
+
+
+
+# Effect of the switch
+
 
 #Calculate confidence interval for effects of switch
 a <- mean(masterDataExclusions_all_switchers$effects_of_switch/100)
 sd <- sd(masterDataExclusions_all_switchers$effects_of_switch/100)
 n <- nrow(masterDataExclusions_all_switchers)
 error <- qnorm(.975) * sd/sqrt(n)
+a # mean
 a - error #lower confidence interval
 a + error #uper confidence interval
 
 
-
+#T-Test PLUS error
+t.test(masterDataExclusions_all_switchers$effects_of_switch/100, mu=0)
+sd(masterDataExclusions_all_switchers$effects_of_switch/100)/sqrt(nrow(masterDataExclusions_all_switchers))
 
  
 
@@ -1520,11 +1573,10 @@ error_vector <- 0
 for(percent in c(1:100)){
   storage_vector <- 0 #stores all the speed markers for the entire dataset before averaging em together.
   
-  for(counter in c(1:nrow(moverData))){ #Get every single mover's speed string
-    speed_string <- toString(moverData$speed_string[counter])
+  for(counter in c(1:nrow(masterDataExclusions_all_switchers))){ #Get every single mover's speed string
+    speed_string <- toString(masterDataExclusions_all_switchers$computer_speed_string[counter])
     speed_string_stamps <- unlist(strsplit(speed_string, "\\W;")) #Split progress string by character ';'
-    percent_marker <- moverData$completion_time[counter]  * 100 *(.01 * percent) # human time is already in ms
-    
+    percent_marker <- masterDataExclusions_all_switchers$computer_solo_time[counter] *(.01 * percent) # human time is already in ms
     
     for(stamp_counter in c(1:length(speed_string_stamps))){ #Loops through every stamp in speed string
       current_stamp <- unlist(strsplit(speed_string_stamps[stamp_counter], ","))
@@ -1546,7 +1598,7 @@ for(percent in c(1:100)){
 mover <- data.frame(speed_vector)
 names(mover) <- "speed"
 mover$percent_completed <- c(1:100)
-mover$group <- "mover"
+mover$group <- "Prime Movers if Monitors who Took Over Hadn't Done So"
 mover$error <- error_vector
 rm(speed_vector)
 rm(error_vector)
@@ -1583,7 +1635,7 @@ switcher <- data.frame(speed_vector)
 names(switcher) <- "speed"
 switcher$error <- error_vector
 switcher$percent_completed <- c(1:100)
-switcher$group <- "switcher"
+switcher$group <- "Monitors who took over"
 
 
 
@@ -1591,7 +1643,8 @@ switcher$group <- "switcher"
 combined <- rbind(mover, switcher)
 
 ggplot(combined, aes(x = percent_completed, y=speed, color = group)) +
-  geom_smooth(method="loess", method.args=list(), se = FALSE) + xlab("Percent of performance") 
+  geom_smooth(method="loess", method.args=list(), se = FALSE) + xlab("Percent of performance") +
+  theme(legend.position="none")
 
 
 View(combined)

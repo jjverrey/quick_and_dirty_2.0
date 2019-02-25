@@ -1492,9 +1492,9 @@ switched_progress_frame_late <- switcher_progress_frame[switcher_progress_frame$
 switched_progress_frame_early <- switcher_progress_frame[switcher_progress_frame$start_checkpoint_percent < mean(switcher_progress_frame$start_checkpoint_percent ),]
 
 #Combine the datasets
-# switcher_progress_frame$group <- "switcher"
-# mover_progress_frame$group <- "mover"
-# final_combined <- rbind(switcher_progress_frame, mover_progress_frame)
+ switcher_progress_frame$group <- "switcher"
+ mover_progress_frame$group <- "mover"
+ final_combined <- rbind(switcher_progress_frame, mover_progress_frame)
 
 
 
@@ -1940,15 +1940,205 @@ for(monitor_counter in c(1:nrow(masterDataExclusions_all_switchers))){
 means_vector <- tapply(master_change_in_speed_frame$Mover_Speed_Dif, master_change_in_speed_frame$Percent, mean)
 means_frame <- data.frame("Percent" = c(0:100), "Mean_Mov_Change_In_Speed" = means_vector)
 
+#Plot ALL pixel speeds
 ggplot(master_change_in_speed_frame, aes(x = Percent, y=Mover_Speed_Dif, group = Mon_ID, color = Mon_ID)) + 
   geom_line() + 
   theme(legend.position="none")
   
 
-
+#Plot ONLY means
 ggplot(means_frame, aes(x = Percent, y=Mean_Mov_Change_In_Speed)) + geom_point()
   
   #geom_smooth(method="loess", se = FALSE) + xlab("Percent of performance") +
   #theme(legend.position="none")
 
 
+#******************************************************************
+
+#Takes a progress string (i.e. string of 'time_in_ms, checkpoint;') and converts it to a dataframe.
+progress_string_decompressor <- function(progress_string, completion_time){
+  movement_frame <- data.frame("time_in_seconds" = NA, "checkpoint" = NA)
+  progress_string <- as.character(progress_string) #movement_string isn't a character initially
+  progress_string_stamps <- unlist(strsplit(progress_string, "\\W;")) #Split string into parts by character ';'
+  
+  for(stamp_counter in c(1:length(progress_string_stamps))){ #Loops through every stamp
+    current_stamp <- unlist(strsplit(progress_string_stamps[stamp_counter], ","))
+
+    if(!check.numeric(current_stamp[1])) #removes the ';' that comes before the first timestamp
+      current_stamp[1] <- substr(current_stamp[1], 2, nchar(current_stamp[1])) 
+    
+    #Now that the string is decompressed into parts (timestamp, checkpoint), add it to the dataframe
+    #You can only add info to the dataframe when you MERGE them together
+    temp_frame <- data.frame("time_in_seconds" = as.numeric(current_stamp[1])/100, 
+                             "checkpoint" = as.numeric(current_stamp[2]))
+    movement_frame <- rbind(movement_frame, temp_frame)
+  }#end of for
+  
+  #removes NAs in row 1
+  movement_frame <- movement_frame[c(2:nrow(movement_frame)),]
+  
+  #Adds the start time (0 seconds) to the frame
+  start_time_frame <- data.frame("time_in_seconds" = 0, "checkpoint" = -1)
+  movement_frame <- rbind(start_time_frame, movement_frame)
+  
+  return(movement_frame)
+}
+
+
+#Takes a progress frame (from previous method) & adjusts it to reflect post-switch data ONLY
+#Switch_time must be MS; end time MUST be in SECONDS
+progress_frame_post_switch <- function(progress_frame, switch_time, end_time){
+  switch_time <- switch_time/100
+  progress_frame <- subset(progress_frame, time_in_seconds >= switch_time)
+
+  #Adjusts the checkpoints so they start at 1 vs. something like '32' (this is the case for movers only)
+  checkpoint_correction <- progress_frame$checkpoint[1]-1
+  progress_frame$checkpoint <- progress_frame$checkpoint - checkpoint_correction
+
+  #Adds the timing of the switch to the start of the progress frame
+  start_time_frame <- data.frame("time_in_seconds" = switch_time, "checkpoint" = 0)
+  progress_frame <- rbind(start_time_frame, progress_frame)
+  
+  
+  #Adds the time the user completed the maze to the END of the progress frame
+  end_time_frame <- data.frame("time_in_seconds" = end_time, 
+                               "checkpoint" = tail(progress_frame$checkpoint, n=1)+1)
+  progress_frame <- rbind(progress_frame, end_time_frame)
+  
+  #Adjusts the time so it starts at 0 seconds vs. something like '105.32s' 
+  progress_frame$time_in_seconds <- progress_frame$time_in_seconds - switch_time
+  
+  return(progress_frame)
+}
+
+progress_frame_pre_switch <- function(progress_frame, switch_time){
+  switch_time <- switch_time/100
+  progress_frame <- subset(progress_frame, time_in_seconds <= switch_time)
+  
+  #Adds the time the user completed the maze to the END of the progress frame
+  switch_time_frame <- data.frame("time_in_seconds" = switch_time, 
+                               "checkpoint" = tail(progress_frame$checkpoint, n=1)+1)
+  progress_frame <- rbind(progress_frame, switch_time_frame)
+  
+  return(progress_frame)
+}
+
+
+#Adds time_percent and checkpoint_percent to a progress dataframe
+add_standardising_metrics_to_progress_frame <- function(progress_frame){
+  switch_time <- progress_frame$time_in_seconds[1]
+  
+  progress_frame$time_percent <-
+    (progress_frame$time_in_seconds - switch_time)/(tail(progress_frame$time_in_seconds, n=1) - switch_time)
+  progress_frame$time_percent <- round((progress_frame$time_percent * 100), 2)
+  
+  progress_frame$checkpoint_percent <- progress_frame$checkpoint/tail(progress_frame$checkpoint, n=1)
+  progress_frame$checkpoint_percent <- round((progress_frame$checkpoint_percent * 100), 2)
+  
+  return(progress_frame)
+}
+
+#Calculates speed values at each given TIME percent
+calculate_speed_frame <- function(progress_frame){
+  end_time <- tail(progress_frame$time_in_seconds, n=1)
+  speed_frame <- data.frame("Percent" = 0, "Speed" = 0)
+  
+  for(percent in c(1:100)){
+    target_time <- end_time * (percent/100)  
+    checkpoints_passed <- nrow(subset(progress_frame, time_in_seconds <= target_time))
+    speed <- as.numeric(checkpoints_passed/target_time)
+  
+    if(length(speed) == 0 || is.nan(speed))
+      speed = 0 
+    
+    temp_frame <- data.frame("Percent" = percent, "Speed" = speed)
+    speed_frame <- rbind(speed_frame, temp_frame)  
+  }
+  
+  return(speed_frame)
+}#end of get_speed_by_percent method
+
+
+#Calculates speed values at each given CHECKPOINT percent
+calculate_speed_frame_by_checkpoint_percent <- function(progress_frame){
+  end_checkpoint <- tail(progress_frame$checkpoint, n=1)
+  speed_frame <- data.frame("Percent" = 0, "Speed" = 0)
+  
+  for(percent in c(1:100)){
+    target_checkpoint <- end_checkpoint * (percent/100)  
+    checkpoints_passed <- nrow(subset(progress_frame, checkpoint <= target_checkpoint))
+    speed <- as.numeric(checkpoints_passed/progress_frame$time_in_seconds[checkpoints_passed-1])
+    
+    if(length(speed) == 0 || is.nan(speed))
+      speed = 0 
+    
+    temp_frame <- data.frame("Percent" = percent, "Speed" = speed)
+    speed_frame <- rbind(speed_frame, temp_frame)  
+  }
+  
+  return(speed_frame)
+}#end of get_speed_by_percent method
+
+
+
+
+
+#Participants must have moved for a good amount of time and NOT just at the very end (7 total exclusions)
+valid_switchers <- masterDataExclusions_all_switchers #shorterns up the name
+master_change_in_speed_frame <- data.frame("Percent" = NA, "Mover_Speed_Dif" = NA, "Mon_ID" = NA)
+total_data_count <- 0
+
+for(monitor_counter in c(1:nrow(valid_switchers))){
+  #Create mover/monitor progress dataframes (i.e. 'seconds' and 'checkpoitns')
+  switch_time <- valid_switchers$computer_elapsed_time[monitor_counter]
+  end_time_monitor <- valid_switchers$completion_time[monitor_counter] #end time is already in seconds
+  end_time_mover <- valid_switchers$computer_solo_time[monitor_counter]/100
+
+  monitor_frame <- progress_string_decompressor(valid_switchers$progress_string[monitor_counter]) 
+  mover_frame <- progress_string_decompressor(valid_switchers$computer_progress_string[monitor_counter]) 
+
+  #Adjusts both frames to reflect post-switch progress
+  mover_frame <- progress_frame_post_switch(mover_frame, switch_time, end_time_mover) #uncomment for post-switch
+  #mover_frame <- progress_frame_pre_switch(mover_frame, switch_time) #Uncomment for pre-switch data
+  monitor_frame <- progress_frame_post_switch(monitor_frame, switch_time, end_time_monitor)
+
+  
+  if(nrow(monitor_frame) > 30 && nrow(mover_frame) > 30){
+    total_data_count <- total_data_count + 1
+    #Create speed frames
+    mover_speed_frame <- calculate_speed_frame(mover_frame)
+    monitor_speed_frame <- calculate_speed_frame(monitor_frame)
+
+    #Create change_in_speed frame
+    change_in_speed_vector <- mover_speed_frame$Speed - monitor_speed_frame$Speed
+    change_in_speed_frame <- 
+      data.frame("Percent" = c(0:100), "Mover_Speed_Dif" = change_in_speed_vector, "Mon_ID" = monitor_counter)
+    master_change_in_speed_frame <- rbind(master_change_in_speed_frame, change_in_speed_frame)
+  }
+}#end of for(monitor_counter)
+
+total_data_count
+
+#removes NAs in row 1
+master_change_in_speed_frame <- master_change_in_speed_frame[c(2:nrow(master_change_in_speed_frame)),] 
+
+
+#Creates vector of means 
+means_vector <- tapply(master_change_in_speed_frame$Mover_Speed_Dif, master_change_in_speed_frame$Percent, mean)
+means_frame <- data.frame("Percent" = c(0:100), "Mean_Mov_Change_In_Speed" = means_vector)
+
+
+#Plot ALLspeeds
+ggplot(master_change_in_speed_frame, aes(x = Percent, y=Mover_Speed_Dif, group = Mon_ID, color = Mon_ID)) +
+  geom_smooth(method = "loess", se = T, group=1) +
+  geom_hline(yintercept=0, linetype="dashed", color = "black") + ylab("") + xlab("") +
+  theme(axis.text.x = element_text(size=30), axis.text.y = element_text(size=30))
+  
+
+  stat_summary(fun.y=mean,geom="smooth", method="loess",lwd=1,aes(group=1))
+
+  geom_line() +
+  stat_summary(data = master_change_in_speed_frame, aes(y = Mover_Speed_Dif,group=Mon_ID), fun.y=mean, colour="red", geom="line")
+
++ 
+  theme(legend.position="none")
